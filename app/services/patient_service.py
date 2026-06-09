@@ -472,3 +472,190 @@ class PatientService:
             "events": paged_events,
             "visit_groups": visit_groups,
         }
+
+    @staticmethod
+    def compare_visits(
+        db: Session, patient_id: int, visit_id1: int, visit_id2: int
+    ) -> Dict[str, Any]:
+        from app.models.patient import Visit
+        from app.models.records import VitalSign, ECGRecord, LabRecord, MedicationRecord
+        from app.models.risk_alert import RiskAssessment
+        from app.schemas.patient import CompareMetric, VisitCompareSummary
+
+        patient = PatientService.get_patient(db, patient_id)
+        if not patient:
+            raise ValueError("患者不存在")
+
+        v1 = db.query(Visit).filter(Visit.id == visit_id1, Visit.patient_id == patient_id).first()
+        v2 = db.query(Visit).filter(Visit.id == visit_id2, Visit.patient_id == patient_id).first()
+        if not v1 or not v2:
+            raise ValueError("就诊不存在或不属于该患者")
+
+        def _safe_float(val):
+            try:
+                return float(val) if val is not None else None
+            except (ValueError, TypeError):
+                return None
+
+        def _num_change(a, b):
+            if a is None and b is None:
+                return "unchanged", 0.0
+            if a is None:
+                return "new", None
+            if b is None:
+                return "removed", None
+            da, db = _safe_float(a), _safe_float(b)
+            if da is None or db is None:
+                return "unchanged", 0.0
+            diff = db - da
+            if abs(diff) < 1e-9:
+                return "unchanged", 0.0
+            return ("increased" if diff > 0 else "decreased"), round(diff, 4)
+
+        summary = {}
+        for cat in ["vital_signs", "labs", "medications", "risks"]:
+            summary[cat] = VisitCompareSummary()
+
+        # === 1. Vital signs: 取两次就诊最近的一次生命体征 ===
+        vs1 = db.query(VitalSign).filter(
+            VitalSign.patient_id == patient_id, VitalSign.visit_id == visit_id1
+        ).order_by(VitalSign.record_time.desc()).first()
+        vs2 = db.query(VitalSign).filter(
+            VitalSign.patient_id == patient_id, VitalSign.visit_id == visit_id2
+        ).order_by(VitalSign.record_time.desc()).first()
+
+        vital_map = {
+            "收缩压": ("systolic_bp", "mmHg"),
+            "舒张压": ("diastolic_bp", "mmHg"),
+            "心率": ("heart_rate", "bpm"),
+            "呼吸频率": ("respiratory_rate", "次/分"),
+            "体温": ("temperature", "℃"),
+            "血氧饱和度": ("oxygen_saturation", "%"),
+        }
+        vital_results = []
+        for name, (field, unit) in vital_map.items():
+            a = getattr(vs1, field, None) if vs1 else None
+            b = getattr(vs2, field, None) if vs2 else None
+            ctype, delta = _num_change(a, b)
+            vital_results.append(CompareMetric(
+                name=name, code=field, unit=unit,
+                v1_value=a, v2_value=b, change_type=ctype, delta=delta,
+            ))
+            setattr(summary["vital_signs"], ctype, getattr(summary["vital_signs"], ctype) + 1)
+            summary["vital_signs"].total += 1
+
+        # === 2. Labs: 按 test_code 归并比较 ===
+        labs1 = db.query(LabRecord).filter(
+            LabRecord.patient_id == patient_id, LabRecord.visit_id == visit_id1
+        ).all()
+        labs2 = db.query(LabRecord).filter(
+            LabRecord.patient_id == patient_id, LabRecord.visit_id == visit_id2
+        ).all()
+        map1 = {f"{l.test_code or l.test_name}": l for l in labs1}
+        map2 = {f"{l.test_code or l.test_name}": l for l in labs2}
+        all_keys = sorted(set(list(map1.keys()) + list(map2.keys())))
+        lab_results = []
+        for key in all_keys:
+            a = map1.get(key)
+            b = map2.get(key)
+            code = (a.test_code if a else None) or (b.test_code if b else None)
+            name = (a.test_name if a else None) or (b.test_name if b else None) or key
+            unit = (a.test_unit if a else None) or (b.test_unit if b else None)
+            va = a.test_value if a else None
+            vb = b.test_value if b else None
+            ctype, delta = _num_change(va, vb)
+            level = None
+            if a and getattr(a, "is_abnormal", None):
+                level = "abnormal_v1"
+            if b and getattr(b, "is_abnormal", None):
+                level = "abnormal_v2" if not level else "abnormal_both"
+            lab_results.append(CompareMetric(
+                name=name, code=code, unit=unit,
+                v1_value=va, v2_value=vb, change_type=ctype, delta=delta, level=level,
+            ))
+            setattr(summary["labs"], ctype, getattr(summary["labs"], ctype) + 1)
+            summary["labs"].total += 1
+
+        # === 3. Medications: 按 generic_name 归并 ===
+        meds1 = db.query(MedicationRecord).filter(
+            MedicationRecord.patient_id == patient_id, MedicationRecord.visit_id == visit_id1
+        ).all()
+        meds2 = db.query(MedicationRecord).filter(
+            MedicationRecord.patient_id == patient_id, MedicationRecord.visit_id == visit_id2
+        ).all()
+        mmap1 = {(m.generic_name or m.drug_name or "").lower(): m for m in meds1}
+        mmap2 = {(m.generic_name or m.drug_name or "").lower(): m for m in meds2}
+        all_med_keys = sorted(set(list(mmap1.keys()) + list(mmap2.keys())))
+        med_results = []
+        for key in all_med_keys:
+            a = mmap1.get(key)
+            b = mmap2.get(key)
+            name = (a.drug_name if a else None) or (b.drug_name if b else None) or key
+            gname = (a.generic_name if a else None) or (b.generic_name if b else None)
+            if a and b:
+                ctype = "continued"
+            elif b and not a:
+                ctype = "new"
+            else:
+                ctype = "removed"
+            va = a.dosage if a else None
+            vb = b.dosage if b else None
+            med_results.append(CompareMetric(
+                name=name, code=gname,
+                v1_value=va, v2_value=vb, change_type=ctype,
+            ))
+            setattr(summary["medications"], ctype, getattr(summary["medications"], ctype) + 1)
+            summary["medications"].total += 1
+
+        # === 4. Risks: 按 assessment_type 归并 ===
+        risks1 = db.query(RiskAssessment).filter(
+            RiskAssessment.patient_id == patient_id, RiskAssessment.visit_id == visit_id1
+        ).all()
+        risks2 = db.query(RiskAssessment).filter(
+            RiskAssessment.patient_id == patient_id, RiskAssessment.visit_id == visit_id2
+        ).all()
+        rmap1 = {r.assessment_type: r for r in risks1}
+        rmap2 = {r.assessment_type: r for r in risks2}
+        all_risk_keys = sorted(set(list(rmap1.keys()) + list(rmap2.keys())))
+        risk_results = []
+        RISK_ORDER = {"极低危": 0, "低危": 1, "中危": 2, "高危": 3, "极高危": 4}
+        for atype in all_risk_keys:
+            a = rmap1.get(atype)
+            b = rmap2.get(atype)
+            va = a.risk_level if a else None
+            vb = b.risk_level if b else None
+            if a and b:
+                ia = RISK_ORDER.get(va, -1)
+                ib = RISK_ORDER.get(vb, -1)
+                if ib == ia:
+                    ctype = "unchanged"
+                elif ib > ia:
+                    ctype = "increased"
+                else:
+                    ctype = "decreased"
+            elif b and not a:
+                ctype = "new"
+            else:
+                ctype = "removed"
+            risk_results.append(CompareMetric(
+                name=atype, code=atype,
+                v1_value=va, v2_value=vb, change_type=ctype,
+                delta=(b.risk_score - a.risk_score) if (a and b and a.risk_score is not None and b.risk_score is not None) else None,
+            ))
+            setattr(summary["risks"], ctype, getattr(summary["risks"], ctype) + 1)
+            summary["risks"].total += 1
+
+        return {
+            "patient_id": patient_id,
+            "visit1_id": visit_id1,
+            "visit2_id": visit_id2,
+            "visit1_no": v1.visit_no,
+            "visit2_no": v2.visit_no,
+            "visit1_time": v1.visit_date or v1.created_at,
+            "visit2_time": v2.visit_date or v2.created_at,
+            "vital_signs": [m.model_dump() for m in vital_results],
+            "labs": [m.model_dump() for m in lab_results],
+            "medications": [m.model_dump() for m in med_results],
+            "risks": [m.model_dump() for m in risk_results],
+            "summary": {k: v.model_dump() for k, v in summary.items()},
+        }

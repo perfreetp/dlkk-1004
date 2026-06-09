@@ -500,6 +500,7 @@ class AlertRuleService:
         patient_id: Optional[int] = None,
         visit_id: Optional[int] = None,
         visit_no: Optional[str] = None,
+        alert_types: Optional[List[str]] = None,
         unresolved_only: bool = False,
         unread_only: bool = False,
     ):
@@ -507,11 +508,29 @@ class AlertRuleService:
         from app.models.patient import Visit
         from app.schemas.risk_alert import VisitAlertCounters, VisitAlertSummary
 
+        if visit_no and (visit_id is None):
+            vq = db.query(Visit)
+            if patient_id:
+                vq = vq.filter(Visit.patient_id == patient_id)
+            target = vq.filter(Visit.visit_no == visit_no).first()
+            if target:
+                visit_id = target.id
+            else:
+                return {
+                    "total": 0,
+                    "total_alerts": 0,
+                    "total_unread": 0,
+                    "total_unresolved": 0,
+                    "items": [],
+                }
+
         query = db.query(Alert)
         if patient_id:
             query = query.filter(Alert.patient_id == patient_id)
         if visit_id:
             query = query.filter(Alert.visit_id == visit_id)
+        if alert_types:
+            query = query.filter(Alert.alert_type.in_(alert_types))
         if unresolved_only:
             query = query.filter(Alert.is_resolved == False)
         if unread_only:
@@ -533,19 +552,8 @@ class AlertRuleService:
             for v in db.query(Visit).filter(Visit.id.in_(vids_to_query)).all():
                 visit_map[v.id] = v
 
-        if visit_no:
-            matched = [v for v in visit_map.values() if v.visit_no == visit_no]
-            if matched:
-                visit_map = {v.id: v for v in matched}
-                visit_alerts = {v.id: visit_alerts[v.id] for v in matched if v.id in visit_alerts}
-            else:
-                visit_map, visit_alerts = {}, {}
-
         results = []
-        t_unread = 0
-        t_unresolved = 0
-        t_alerts = len(alerts)
-        for v_id in sorted(visit_alerts.keys(), key=lambda i: visit_map[i].visit_date or visit_map[i].created_at, reverse=True):
+        for v_id in sorted(visit_alerts.keys(), key=lambda i: visit_map[i].visit_date or visit_map[i].created_at if i in visit_map else datetime.min, reverse=True):
             if v_id not in visit_map:
                 continue
             v = visit_map[v_id]
@@ -572,10 +580,8 @@ class AlertRuleService:
                     counters.low_count += 1
                 if not a.is_read:
                     counters.unread_count += 1
-                    t_unread += 1
                 if not a.is_resolved:
                     counters.unresolved_count += 1
-                    t_unresolved += 1
             results.append(VisitAlertSummary(
                 visit_id=v.id,
                 visit_no=v.visit_no,
@@ -609,10 +615,8 @@ class AlertRuleService:
                     counters.low_count += 1
                 if not a.is_read:
                     counters.unread_count += 1
-                    t_unread += 1
                 if not a.is_resolved:
                     counters.unresolved_count += 1
-                    t_unresolved += 1
             first_pid = patient_id if patient_id else (no_visit_alerts[0].patient_id if no_visit_alerts else 0)
             results.insert(0, VisitAlertSummary(
                 visit_id=0,
@@ -624,21 +628,16 @@ class AlertRuleService:
                 items=no_visit_alerts,
             ))
 
-        if not unresolved_only and not unread_only:
-            for a in alerts:
-                if not a.is_read:
-                    pass
-                if not a.is_resolved:
-                    pass
-        else:
-            t_unread = sum(1 for a in alerts if not a.is_read)
-            t_unresolved = sum(1 for a in alerts if not a.is_resolved)
+        # --- 结尾重汇总：保证 totals 与各分组和严格一致 ---
+        total_alerts = sum(r.counters.total for r in results)
+        total_unread = sum(r.counters.unread_count for r in results)
+        total_unresolved = sum(r.counters.unresolved_count for r in results)
 
         return {
             "total": len(results),
-            "total_alerts": t_alerts,
-            "total_unread": t_unread,
-            "total_unresolved": t_unresolved,
+            "total_alerts": total_alerts,
+            "total_unread": total_unread,
+            "total_unresolved": total_unresolved,
             "items": results,
         }
 

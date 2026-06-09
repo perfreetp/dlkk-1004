@@ -54,6 +54,7 @@ class CarePlanResponse(CarePlanBase):
     review_time: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+    evidence_details: Optional[Dict[str, Any]] = None
 
     class Config:
         from_attributes = True
@@ -123,6 +124,22 @@ class FollowUpListResponse(BaseModel):
     completed_count: int
     overdue_count: int
     items: List[FollowUpResponse]
+
+
+class CarePlanToFollowUpRequest(BaseModel):
+    scheduled_date: Optional[datetime] = None
+    follow_up_type: Optional[str] = "clinic"
+    purpose: Optional[str] = None
+    assigned_doctor_id: Optional[str] = None
+    days_after: Optional[int] = 14
+    from_exam_index: Optional[int] = Field(None, description="从exam_suggestions数组中取第几个建议，不传默认第一个含'复诊/复查'的")
+
+
+class AuditStatisticsResponse(BaseModel):
+    period_days: int = 30
+    alerts: Dict[str, Any] = {}
+    follow_ups: Dict[str, Any] = {}
+    care_plans: Dict[str, Any] = {}
 
 
 class ReminderResult(BaseModel):

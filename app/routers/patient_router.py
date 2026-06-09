@@ -6,7 +6,7 @@ from datetime import datetime
 from app.schemas.patient import (
     PatientCreate, PatientUpdate, PatientResponse, PatientListResponse,
     VisitCreate, VisitResponse, VisitMergeRequest, TimelineResponse,
-    TimelineRequest,
+    TimelineRequest, VisitCompareResponse,
 )
 from app.services.patient_service import PatientService
 
@@ -123,3 +123,17 @@ def query_timeline(
         req.visit_id, req.visit_no, req.page, req.page_size, include_groups
     )
     return {"patient_id": patient_id, **result}
+
+
+@router.get("/{patient_id}/visits/compare", response_model=VisitCompareResponse, summary="两次就诊指标对比视图")
+def compare_visits(
+    patient_id: int,
+    visit_id1: int = Query(..., description="就诊1 ID"),
+    visit_id2: int = Query(..., description="就诊2 ID"),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = PatientService.compare_visits(db, patient_id, visit_id1, visit_id2)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result

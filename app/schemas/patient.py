@@ -133,3 +133,39 @@ class TimelineResponse(BaseModel):
     has_more: bool
     events: List[TimelineEvent]
     visit_groups: Optional[List[TimelineVisitGroup]] = None
+
+
+class CompareMetric(BaseModel):
+    name: str
+    code: Optional[str] = None
+    unit: Optional[str] = None
+    v1_value: Optional[Any] = None
+    v2_value: Optional[Any] = None
+    change_type: str  # increased / decreased / unchanged / new / removed / continued
+    delta: Optional[float] = None
+    level: Optional[str] = None
+
+
+class VisitCompareSummary(BaseModel):
+    increased: int = 0
+    decreased: int = 0
+    unchanged: int = 0
+    new: int = 0
+    removed: int = 0
+    continued: int = 0
+    total: int = 0
+
+
+class VisitCompareResponse(BaseModel):
+    patient_id: int
+    visit1_id: int
+    visit2_id: int
+    visit1_no: Optional[str] = None
+    visit2_no: Optional[str] = None
+    visit1_time: Optional[datetime] = None
+    visit2_time: Optional[datetime] = None
+    vital_signs: List[CompareMetric] = []
+    labs: List[CompareMetric] = []
+    medications: List[CompareMetric] = []
+    risks: List[CompareMetric] = []
+    summary: Dict[str, VisitCompareSummary] = {}

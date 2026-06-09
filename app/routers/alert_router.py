@@ -90,12 +90,14 @@ def list_alerts_by_visit(
     patient_id: Optional[int] = Query(None),
     visit_id: Optional[int] = Query(None),
     visit_no: Optional[str] = Query(None),
+    alert_types: Optional[str] = Query(None, description="提醒类型，多个用逗号分隔 critical_value,abnormal_value,drug_contraindication,duplicate_exam"),
     unresolved_only: bool = Query(False),
     unread_only: bool = Query(False),
     db: Session = Depends(get_db),
 ):
+    types_list = [t.strip() for t in alert_types.split(",")] if alert_types else None
     return AlertRuleService.list_alerts_by_visit(
-        db, patient_id, visit_id, visit_no, unresolved_only, unread_only
+        db, patient_id, visit_id, visit_no, types_list, unresolved_only, unread_only
     )
 
 

@@ -208,8 +208,18 @@ class CarePlanService:
             for atype in ["heart_failure", "atrial_fibrillation", "coronary_artery_disease"]:
                 latest = RiskEngineService.get_latest_assessment(db, patient_id, atype)
                 if latest:
-                    risk_summaries[atype] = latest.risk_level
-                    if not visit_id or latest.visit_id == visit_id:
+                    if visit_id:
+                        if latest.visit_id == visit_id:
+                            risk_summaries[atype] = latest.risk_level
+                            evidence_risks.append({
+                                "id": latest.id,
+                                "assessment_type": latest.assessment_type,
+                                "risk_level": latest.risk_level,
+                                "risk_score": latest.risk_score,
+                                "assessment_date": latest.assessment_date.isoformat() if latest.assessment_date else None,
+                            })
+                    else:
+                        risk_summaries[atype] = latest.risk_level
                         evidence_risks.append({
                             "id": latest.id,
                             "assessment_type": latest.assessment_type,
@@ -243,8 +253,6 @@ class CarePlanService:
         current_meds = RecordService.list_medications(db, patient_id, active_only=True)
         if visit_id:
             visit_meds = [m for m in current_meds if m.visit_id == visit_id]
-            if not visit_meds:
-                visit_meds = current_meds
         else:
             visit_meds = current_meds
         evidence_active_meds = [
@@ -429,3 +437,138 @@ class CarePlanService:
     @staticmethod
     def get_care_plan(db: Session, plan_id: int) -> Optional[CarePlan]:
         return db.query(CarePlan).filter(CarePlan.id == plan_id).first()
+
+    @staticmethod
+    def convert_plan_to_follow_up(
+        db: Session,
+        plan_id: int,
+        req: "CarePlanToFollowUpRequest",
+    ) -> "FollowUp":
+        from app.models.plan_followup import FollowUp
+        from app.schemas.plan_followup import FollowUpCreate
+        from datetime import timedelta
+
+        plan = CarePlanService.get_care_plan(db, plan_id)
+        if not plan:
+            raise ValueError("方案不存在")
+
+        purpose = req.purpose
+        suggestions = plan.exam_suggestions or []
+        matched_idx = None
+
+        if req.from_exam_index is not None:
+            if 0 <= req.from_exam_index < len(suggestions):
+                matched_idx = req.from_exam_index
+        else:
+            for i, s in enumerate(suggestions):
+                txt = f"{s.get('test_name','')} {s.get('purpose','')} {s.get('description','')}"
+                if any(k in txt for k in ["复诊", "复查", "随访", "return", "follow"]):
+                    matched_idx = i
+                    break
+            if matched_idx is None and suggestions:
+                matched_idx = 0
+
+        if matched_idx is not None and not purpose:
+            s = suggestions[matched_idx]
+            parts = []
+            if s.get("test_name"):
+                parts.append(str(s["test_name"]))
+            if s.get("purpose"):
+                parts.append(str(s["purpose"]))
+            if s.get("description"):
+                parts.append(str(s["description"]))
+            purpose = " | ".join(parts) if parts else (plan.plan_type or "方案") + "复诊"
+        if not purpose:
+            purpose = (plan.plan_type or "方案") + "复诊"
+
+        if req.scheduled_date:
+            scheduled = req.scheduled_date
+        else:
+            base = plan.plan_date or plan.created_at
+            scheduled = base + timedelta(days=req.days_after or 14)
+
+        fu_in = FollowUpCreate(
+            patient_id=plan.patient_id,
+            visit_id=plan.visit_id,
+            follow_up_type=req.follow_up_type or "clinic",
+            scheduled_date=scheduled,
+            purpose=f"[方案#{plan.id}] {purpose}",
+            assigned_doctor_id=req.assigned_doctor_id or plan.author_id,
+        )
+        fu = FollowUp(**fu_in.model_dump())
+        fu.status = "scheduled"
+        db.add(fu)
+        db.commit()
+        db.refresh(fu)
+        return fu
+
+    @staticmethod
+    def get_audit_statistics(db: Session, period_days: int = 30) -> Dict[str, Any]:
+        from app.models.risk_alert import Alert
+        from app.models.plan_followup import FollowUp
+        from datetime import datetime, timedelta, timezone
+
+        since = datetime.utcnow() - timedelta(days=period_days)
+
+        alerts_q = db.query(Alert).filter(Alert.created_at >= since)
+        all_alerts = alerts_q.all()
+        alerts_total = len(all_alerts)
+        alerts_read = sum(1 for a in all_alerts if a.is_read)
+        alerts_resolved = sum(1 for a in all_alerts if a.is_resolved)
+        alerts_unresolved = alerts_total - alerts_resolved
+        alerts_by_type = {}
+        for a in all_alerts:
+            alerts_by_type[a.alert_type] = alerts_by_type.get(a.alert_type, 0) + 1
+        alerts_by_level = {}
+        for a in all_alerts:
+            alerts_by_level[a.alert_level] = alerts_by_level.get(a.alert_level, 0) + 1
+
+        fus_q = db.query(FollowUp).filter(FollowUp.created_at >= since)
+        all_fus = fus_q.all()
+        fu_total = len(all_fus)
+        fu_scheduled = sum(1 for f in all_fus if f.status == "scheduled")
+        fu_completed = sum(1 for f in all_fus if f.status == "completed")
+        fu_missed = sum(1 for f in all_fus if f.status == "missed")
+        fu_cancelled = sum(1 for f in all_fus if f.status == "cancelled")
+        fu_overdue = sum(1 for f in all_fus if f.status == "scheduled" and f.scheduled_date and f.scheduled_date < datetime.utcnow())
+
+        plans_q = db.query(CarePlan).filter(CarePlan.created_at >= since)
+        all_plans = plans_q.all()
+        plan_total = len(all_plans)
+        plans_by_status = {}
+        for p in all_plans:
+            plans_by_status[p.status or "draft"] = plans_by_status.get(p.status or "draft", 0) + 1
+        plan_draft = sum(1 for p in all_plans if (p.status or "draft") == "draft")
+        plan_issued = sum(1 for p in all_plans if p.status in {"reviewed", "approved", "signed", "issued"})
+
+        def _pct(num, den):
+            return round(num * 100.0 / den, 2) if den > 0 else 0.0
+
+        return {
+            "period_days": period_days,
+            "alerts": {
+                "total": alerts_total,
+                "read": alerts_read,
+                "read_rate_pct": _pct(alerts_read, alerts_total),
+                "resolved": alerts_resolved,
+                "unresolved": alerts_unresolved,
+                "resolve_rate_pct": _pct(alerts_resolved, alerts_total),
+                "by_type": alerts_by_type,
+                "by_level": alerts_by_level,
+            },
+            "follow_ups": {
+                "total": fu_total,
+                "scheduled": fu_scheduled,
+                "completed": fu_completed,
+                "missed": fu_missed,
+                "cancelled": fu_cancelled,
+                "overdue": fu_overdue,
+                "complete_rate_pct": _pct(fu_completed, fu_total),
+            },
+            "care_plans": {
+                "total": plan_total,
+                "draft": plan_draft,
+                "issued": plan_issued,
+                "by_status": plans_by_status,
+            },
+        }
