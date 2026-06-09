@@ -3,6 +3,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.models.records import LabRecord, MedicationRecord
 from app.schemas.records import (
     VitalSignCreate, VitalSignBatchCreate, VitalSignResponse,
     ECGRecordCreate, ECGRecordResponse,
@@ -60,15 +61,39 @@ def list_ecg(
 def create_lab(lab_in: LabRecordCreate, db: Session = Depends(get_db)):
     lab = RecordService.create_lab_record(db, lab_in)
     AlertRuleService.check_lab_record(db, lab)
-    AlertRuleService.check_duplicate_exam(db, lab.patient_id, "lab", lab.test_code or "")
+    AlertRuleService.check_duplicate_exam(
+        db, lab.patient_id, "lab", lab.test_code or "",
+        exclude_record_ids=[lab.id], new_record_id=lab.id
+    )
     return lab
 
 
 @router.post("/lab/batch", response_model=List[LabRecordResponse], summary="批量录入检验记录")
 def batch_create_lab(batch_in: LabRecordBatchCreate, db: Session = Depends(get_db)):
     labs = RecordService.batch_create_lab_records(db, batch_in.records)
+    new_ids = [lab.id for lab in labs]
+    patient_codes_seen = {}
     for lab in labs:
         AlertRuleService.check_lab_record(db, lab)
+        key = (lab.patient_id, lab.test_code or "")
+        if key in patient_codes_seen:
+            first = patient_codes_seen[key]
+            AlertRuleService._create_alert(
+                db, lab.patient_id, lab.visit_id,
+                alert_type="duplicate_exam",
+                alert_level="medium",
+                title=f"重复检查提示: {lab.test_name}",
+                content=f"本批次内已存在相同检验【{first.test_name}】(首次值: {first.test_value}{first.test_unit or ''}，本次值: {lab.test_value}{lab.test_unit or ''}，请确认是否重复录入。",
+                related_record_type="lab_record",
+                related_record_id=lab.id,
+            )
+            db.commit()
+        else:
+            patient_codes_seen[key] = lab
+            AlertRuleService.check_duplicate_exam(
+                db, lab.patient_id, "lab", lab.test_code or "",
+                exclude_record_ids=new_ids, new_record_id=lab.id
+            )
     return labs
 
 
@@ -86,17 +111,23 @@ def list_lab(
 @router.post("/medications", response_model=MedicationRecordResponse, summary="录入用药记录")
 def create_medication(med_in: MedicationRecordCreate, db: Session = Depends(get_db)):
     med = RecordService.create_medication(db, med_in)
-    existing = RecordService.list_medications(db, med.patient_id, active_only=True)
-    AlertRuleService.check_medication_safety(db, med, existing)
+    history = (
+        db.query(MedicationRecord)
+        .filter(
+            MedicationRecord.patient_id == med.patient_id,
+            MedicationRecord.is_active == True,
+            MedicationRecord.id != med.id,
+        )
+        .all()
+    )
+    AlertRuleService.check_medication_safety(db, med, history, peer_meds=[med])
     return med
 
 
 @router.post("/medications/batch", response_model=List[MedicationRecordResponse], summary="批量录入用药记录")
 def batch_create_medications(batch_in: MedicationRecordBatchCreate, db: Session = Depends(get_db)):
     meds = RecordService.batch_create_medications(db, batch_in.records)
-    all_existing = RecordService.list_medications(db, meds[0].patient_id if meds else 0, active_only=True)
-    for med in meds:
-        AlertRuleService.check_medication_safety(db, med, all_existing)
+    AlertRuleService.check_batch_medication_safety(db, meds)
     return meds
 
 

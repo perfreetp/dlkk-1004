@@ -1,8 +1,11 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 from app.models.patient import Patient, Visit
+from app.models.records import VitalSign, ECGRecord, LabRecord, MedicationRecord
+from app.models.risk_alert import RiskAssessment, Alert
+from app.models.plan_followup import CarePlan, FollowUp
 from app.schemas.patient import PatientCreate, PatientUpdate, VisitCreate, VisitMergeRequest, TimelineEvent
 
 
@@ -87,17 +90,53 @@ class PatientService:
         if not target:
             raise ValueError("目标患者不存在")
 
-        merged_count = 0
+        related_models = [
+            (VitalSign, "vital_signs"),
+            (ECGRecord, "ecg_records"),
+            (LabRecord, "lab_records"),
+            (MedicationRecord, "medication_records"),
+            (RiskAssessment, "risk_assessments"),
+            (Alert, "alerts"),
+            (CarePlan, "care_plans"),
+            (FollowUp, "follow_ups"),
+        ]
+
+        merged_visit_count = 0
+        merged_details: Dict[str, int] = {}
+
         for visit_id in merge_in.source_visit_ids:
             visit = PatientService.get_visit(db, visit_id)
-            if visit and visit.patient_id != merge_in.target_patient_id:
-                visit.patient_id = merge_in.target_patient_id
-                merged_count += 1
+            if not visit:
+                continue
+            if visit.patient_id == merge_in.target_patient_id:
+                continue
+
+            old_patient_id = visit.patient_id
+            visit.patient_id = merge_in.target_patient_id
+            merged_visit_count += 1
+
+            for model, label in related_models:
+                if hasattr(model, "visit_id"):
+                    query = db.query(model).filter(model.visit_id == visit_id)
+                else:
+                    query = db.query(model).filter(
+                        and_(
+                            model.patient_id == old_patient_id,
+                        )
+                    )
+                rel_count = query.count()
+                if rel_count > 0:
+                    query.update(
+                        {model.patient_id: merge_in.target_patient_id},
+                        synchronize_session=False,
+                    )
+                    merged_details[label] = merged_details.get(label, 0) + rel_count
 
         db.commit()
         return {
             "target_patient_id": merge_in.target_patient_id,
-            "merged_visit_count": merged_count,
+            "merged_visit_count": merged_visit_count,
+            "merged_related_records": merged_details,
             "note": merge_in.merge_note,
         }
 

@@ -247,65 +247,132 @@ class AlertRuleService:
         return alerts
 
     @staticmethod
+    def _med_names(med: MedicationRecord) -> set:
+        return {(med.drug_name or "").lower(), (med.generic_name or "").lower()}
+
+    @staticmethod
+    def _match_any(name_set: set, keywords: List[str]) -> bool:
+        return any(k.lower() in nm for k in keywords for nm in name_set)
+
+    @staticmethod
     def check_medication_safety(
         db: Session,
         new_med: MedicationRecord,
         existing_meds: List[MedicationRecord],
+        peer_meds: Optional[List[MedicationRecord]] = None,
         patient_conditions: Optional[List[str]] = None,
     ) -> List[Alert]:
         alerts = []
         patient_id = new_med.patient_id
         visit_id = new_med.visit_id
         patient_conditions = patient_conditions or []
+        peer_meds = peer_meds or []
 
-        new_drug_name = (new_med.drug_name or "").lower()
-        new_generic = (new_med.generic_name or "").lower()
-        new_all_names = {new_drug_name, new_generic}
+        new_names = AlertRuleService._med_names(new_med)
+        new_med_id = new_med.id
 
-        active_meds = [m for m in existing_meds if m.is_active and m.id != new_med.id]
+        all_compare = []
+        for m in existing_meds:
+            if m.is_active and m.id != new_med_id:
+                all_compare.append(("历史", m))
+        for m in peer_meds:
+            if m.is_active and m.id != new_med_id and m.patient_id == patient_id:
+                all_compare.append(("本次同批", m))
 
         for rule in AlertRuleService.CONTRAINDICATION_RULES:
-            rule_match_new = any(
-                d.lower() in nm for d in rule["drugs"] for nm in new_all_names
-            )
+            rule_a = rule.get("drugs", [])
+            rule_b = rule.get("contraindicated_with") or rule.get("conditions", [])
+            has_condition_only = rule.get("conditions") and not rule.get("contraindicated_with")
 
-            if rule_match_new and rule.get("contraindicated_with"):
-                for existing in active_meds:
-                    existing_names = {(existing.drug_name or "").lower(), (existing.generic_name or "").lower()}
-                    rule_match_existing = any(
-                        c.lower() in en for c in rule["contraindicated_with"] for en in existing_names
+            match_a_in_new = AlertRuleService._match_any(new_names, rule_a)
+            match_b_in_new = AlertRuleService._match_any(new_names, rule_b) if not has_condition_only else False
+
+            for source, other in all_compare:
+                other_names = AlertRuleService._med_names(other)
+                match_a_in_other = AlertRuleService._match_any(other_names, rule_a)
+                match_b_in_other = AlertRuleService._match_any(other_names, rule_b) if not has_condition_only else False
+
+                conflict = None
+                if match_a_in_new and match_b_in_other:
+                    conflict = f"新药【{new_med.drug_name}】与{source}用药【{other.drug_name}】"
+                elif match_b_in_new and match_a_in_other:
+                    conflict = f"新药【{new_med.drug_name}】与{source}用药【{other.drug_name}】"
+                if conflict:
+                    content = (
+                        f"{conflict}存在配伍禁忌（类别: {rule['category']}）。\n"
+                        f"组合: {', '.join(rule_a)} + {', '.join(rule_b)}\n"
+                        f"原因: {rule['reason']}"
                     )
-                    if rule_match_existing:
-                        alerts.append(AlertRuleService._create_alert(
-                            db, patient_id, visit_id,
-                            alert_type="drug_contraindication",
-                            alert_level=rule["alert_level"],
-                            title=f"禁忌用药: {rule['category']}",
-                            content=f"新药【{new_med.drug_name}】与现有用药【{existing.drug_name}】存在配伍禁忌！原因: {rule['reason']}",
-                            related_record_type="medication",
-                            related_record_id=new_med.id,
-                        ))
-                        break
+                    alerts.append(AlertRuleService._create_alert(
+                        db, patient_id, visit_id,
+                        alert_type="drug_contraindication",
+                        alert_level=rule["alert_level"],
+                        title=f"禁忌用药: {rule['category']}",
+                        content=content,
+                        related_record_type="medication",
+                        related_record_id=new_med.id,
+                    ))
 
-            if rule_match_new and rule.get("conditions"):
+            if has_condition_only and match_a_in_new:
                 for cond in rule["conditions"]:
                     if cond in patient_conditions:
+                        content = (
+                            f"患者存在病情/指标[{cond}]，与新药【{new_med.drug_name}】存在禁忌（类别: {rule['category']}）。\n"
+                            f"原因: {rule['reason']}"
+                        )
                         alerts.append(AlertRuleService._create_alert(
                             db, patient_id, visit_id,
                             alert_type="drug_contraindication",
                             alert_level=rule["alert_level"],
                             title=f"用药禁忌: {rule['category']} - 病情不符",
-                            content=f"患者存在[{cond}]，使用【{new_med.drug_name}】存在风险！原因: {rule['reason']}",
+                            content=content,
                             related_record_type="medication",
                             related_record_id=new_med.id,
                         ))
                         break
 
-        if alerts:
+        seen_keys = set()
+        dedup_alerts = []
+        for a in alerts:
+            key = (a.title, a.content[:150])
+            if key not in seen_keys:
+                seen_keys.add(key)
+                dedup_alerts.append(a)
+
+        if dedup_alerts:
             db.commit()
-            for a in alerts:
+            for a in dedup_alerts:
                 db.refresh(a)
-        return alerts
+        return dedup_alerts
+
+    @staticmethod
+    def check_batch_medication_safety(
+        db: Session,
+        all_new_meds: List[MedicationRecord],
+    ) -> List[Alert]:
+        from collections import defaultdict
+        by_patient = defaultdict(list)
+        for m in all_new_meds:
+            by_patient[m.patient_id].append(m)
+
+        all_alerts = []
+        for patient_id, patient_meds in by_patient.items():
+            history = (
+                db.query(MedicationRecord)
+                .filter(
+                    MedicationRecord.patient_id == patient_id,
+                    MedicationRecord.is_active == True,
+                    MedicationRecord.id.notin_([m.id for m in patient_meds]),
+                )
+                .all()
+            )
+            for med in patient_meds:
+                all_alerts.extend(
+                    AlertRuleService.check_medication_safety(
+                        db, med, history, peer_meds=patient_meds
+                    )
+                )
+        return all_alerts
 
     @staticmethod
     def check_duplicate_exam(
@@ -314,29 +381,47 @@ class AlertRuleService:
         exam_type: str,
         exam_code: str,
         within_hours: int = 24,
+        exclude_record_ids: Optional[List[int]] = None,
+        new_record_id: Optional[int] = None,
     ) -> Optional[Alert]:
+        if not exam_code:
+            return None
         cutoff = datetime.utcnow() - timedelta(hours=within_hours)
+        exclude_record_ids = exclude_record_ids or []
 
         if exam_type == "lab":
-            existing = (
-                db.query(LabRecord)
-                .filter(
-                    LabRecord.patient_id == patient_id,
-                    LabRecord.test_code == exam_code,
-                    LabRecord.record_time >= cutoff,
-                )
-                .order_by(LabRecord.record_time.desc())
-                .first()
+            query = db.query(LabRecord).filter(
+                LabRecord.patient_id == patient_id,
+                LabRecord.test_code == exam_code,
+                LabRecord.record_time >= cutoff,
             )
+            if exclude_record_ids:
+                query = query.filter(LabRecord.id.notin_(exclude_record_ids))
+            existing = query.order_by(LabRecord.record_time.desc()).first()
+
             if existing:
+                dup_count = query.count()
+                content = (
+                    f"患者在{existing.record_time.strftime('%Y-%m-%d %H:%M')}"
+                    f"已完成相同检验【{existing.test_name}】(值: {existing.test_value}{existing.test_unit or ''})，"
+                    f"同期已有{dup_count}条同类记录，建议确认是否有必要重复。"
+                )
+                related_id = new_record_id if new_record_id is not None else existing.id
+                visit_id = (
+                    db.query(LabRecord.visit_id)
+                    .filter(LabRecord.id == related_id)
+                    .scalar()
+                    if new_record_id is not None
+                    else existing.visit_id
+                )
                 alert = AlertRuleService._create_alert(
-                    db, patient_id, existing.visit_id,
+                    db, patient_id, visit_id,
                     alert_type="duplicate_exam",
                     alert_level="medium",
                     title=f"重复检查提示: {existing.test_name}",
-                    content=f"患者在{existing.record_time.strftime('%Y-%m-%d %H:%M')}已完成相同检验【{existing.test_name}】(值: {existing.test_value}{existing.test_unit or ''})，建议确认是否有必要重复。",
+                    content=content,
                     related_record_type="lab_record",
-                    related_record_id=existing.id,
+                    related_record_id=related_id,
                 )
                 db.commit()
                 db.refresh(alert)
