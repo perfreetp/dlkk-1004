@@ -90,3 +90,49 @@ class AlertListResponse(BaseModel):
     unread_count: int
     critical_count: int
     items: List[AlertResponse]
+
+
+class AlertBatchResolveRequest(BaseModel):
+    patient_id: Optional[int] = None
+    visit_id: Optional[int] = None
+    alert_ids: Optional[List[int]] = None
+    resolve_note: Optional[str] = None
+    resolve_all_in_visit: Optional[bool] = False
+
+
+class AlertBatchResolveResponse(BaseModel):
+    total_resolved: int
+    resolved_ids: List[int]
+
+
+class VisitAlertCounters(BaseModel):
+    critical_value: int = 0
+    abnormal_value: int = 0
+    drug_contraindication: int = 0
+    duplicate_exam: int = 0
+    other: int = 0
+    total: int = 0
+    critical_count: int = 0
+    high_count: int = 0
+    medium_count: int = 0
+    low_count: int = 0
+    unread_count: int = 0
+    unresolved_count: int = 0
+
+
+class VisitAlertSummary(BaseModel):
+    visit_id: int
+    visit_no: Optional[str] = None
+    visit_type: Optional[str] = None
+    visit_time: Optional[datetime] = None
+    patient_id: int
+    counters: VisitAlertCounters
+    items: List[AlertResponse]
+
+
+class VisitAlertSummaryListResponse(BaseModel):
+    total: int
+    total_alerts: int
+    total_unread: int
+    total_unresolved: int
+    items: List[VisitAlertSummary]

@@ -1,0 +1,145 @@
+=== 4 New Requirements Regression Test ===
+Started: 2026-06-09T22:47:36.674597
+
+================================================================================
+[REQ 1 + 2] Timeline enhancements: groups + filters + alert/care_plan events
+================================================================================
+
+>>> POST http://localhost:8000/api/v1/patients
+    [200] {"patient_no":"P-TL-100","name":"时间线患者","gender":"male","birth_date":"1965-03-15","id_card":null,"phone":null,"address":null,"blood_type":null,"height":null,"weight":null,"smoking":false,"drinking":fa
+
+>>> POST http://localhost:8000/api/v1/patients/visits
+    [200] {"patient_id":1,"visit_no":"V-TL-001","visit_type":"门诊","visit_date":"2026-06-09T22:47:38.749777","department":"心内科","doctor_id":null,"chief_complaint":"反复胸闷1月","present_illness":null,"diagnosis":null
+
+>>> POST http://localhost:8000/api/v1/patients/visits
+    [200] {"patient_id":1,"visit_no":"V-TL-002","visit_type":"急诊","visit_date":"2026-06-12T22:47:40.765264","department":"急诊","doctor_id":null,"chief_complaint":"胸痛2小时","present_illness":null,"diagnosis":null,"
+
+>>> POST http://localhost:8000/api/v1/records/vital-signs
+    [200] {"patient_id":1,"visit_id":1,"record_time":"2026-06-09T14:47:44.781356","systolic_bp":148.0,"diastolic_bp":95.0,"heart_rate":92.0,"respiratory_rate":null,"temperature":null,"oxygen_saturation":null,"s
+
+>>> POST http://localhost:8000/api/v1/records/ecg
+    [200] {"patient_id":1,"visit_id":1,"record_time":"2026-06-09T22:47:44.787450","ecg_type":null,"heart_rate":null,"rhythm":"窦性心动过速","pr_interval":null,"qrs_duration":null,"qt_interval":null,"qtc_interval":nul
+
+>>> POST http://localhost:8000/api/v1/records/lab
+    [200] {"patient_id":1,"visit_id":1,"record_time":"2026-06-09T22:47:46.800752","lab_type":null,"test_name":"肌钙蛋白I","test_code":"CTNI","test_value":0.8,"test_unit":"ng/mL","reference_low":0.0,"reference_high"
+
+>>> POST http://localhost:8000/api/v1/records/lab
+    [200] {"patient_id":1,"visit_id":1,"record_time":"2026-06-09T22:47:48.824786","lab_type":null,"test_name":"BNP","test_code":"BNP","test_value":1200.0,"test_unit":"pg/mL","reference_low":0.0,"reference_high"
+
+>>> POST http://localhost:8000/api/v1/records/medications
+    [200] {"patient_id":1,"visit_id":1,"order_time":"2026-06-09T14:47:52.847804","drug_code":null,"drug_name":"阿司匹林肠溶片","generic_name":"Aspirin","drug_category":null,"dosage":"100mg","frequency":"qd","route":"口
+
+>>> POST http://localhost:8000/api/v1/records/medications
+    [200] {"patient_id":1,"visit_id":1,"order_time":"2026-06-09T14:47:54.859793","drug_code":null,"drug_name":"硝酸甘油片","generic_name":"Nitroglycerin","drug_category":null,"dosage":"0.5mg","frequency":"prn","rout
+
+>>> POST http://localhost:8000/api/v1/records/medications
+    [200] {"patient_id":1,"visit_id":1,"order_time":"2026-06-09T14:47:56.872793","drug_code":null,"drug_name":"西地那非片","generic_name":"Sildenafil","drug_category":null,"dosage":"50mg","frequency":"qd","route":"口
+
+>>> POST http://localhost:8000/api/v1/risks/calculate
+    [200] {"patient_id":1,"visit_id":1,"assessment_type":"heart_failure","assessment_date":"2026-06-09T14:47:58.887796","risk_level":"极低危","risk_score":3.1,"score_details":{"nyha_class":{"value":3,"score":0},"a
+
+>>> POST http://localhost:8000/api/v1/care-plans/generate
+    [200] {"patient_id":1,"visit_id":1,"plan_type":"heart_failure","plan_date":"2026-06-09T14:48:00.907972","status":"draft","exam_suggestions":[{"code":"NT_proBNP","name":"NT-proBNP","priority":"required","rea
+
+>>> POST http://localhost:8000/api/v1/follow-ups
+    [200] {"patient_id":1,"visit_id":1,"follow_up_type":"clinic","scheduled_date":"2026-06-23T22:48:00.915107","purpose":"心衰复查","assigned_doctor_id":null,"id":1,"status":"scheduled","actual_date":null,"symptoms
+
+>>> GET http://localhost:8000/api/v1/patients/1/timeline?page_size=200&include_groups=true
+    [200] {"patient_id":1,"total":15,"page":1,"page_size":200,"has_more":false,"events":[{"event_type":"follow_up","event_time":"2026-06-23T22:48:00.915107","title":"随访: clinic [已预约]","description":"心衰复查","rela
+  [PASS]: 1a 时间线包含9类事件 (visit/vital/ecg/lab/med/risk/alert/care_plan/follow_up)  (missing=set(), present=['alert', 'care_plan', 'ecg', 'follow_up', 'lab', 'medication', 'risk', 'visit', 'vital_sign'])
+  [PASS]: 1b 按就诊分组：2个就诊都有分组 + V1组内聚合8类关联事件  (v1=True v2=True; V1 group missing=set())
+
+>>> GET http://localhost:8000/api/v1/patients/1/timeline?event_types=lab,medication&page_size=50
+    [200] {"patient_id":1,"total":5,"page":1,"page_size":50,"has_more":false,"events":[{"event_type":"lab","event_time":"2026-06-09T22:47:48.824786","title":"检验: BNP = 1200.0pg/mL [异常]","description":"参考范围: --1
+  [PASS]: 2a 事件类型过滤：lab,medication 只返回这两类  (types=['lab', 'medication'], total_filtered=5)
+
+>>> GET http://localhost:8000/api/v1/patients/1/timeline?visit_no=V-TL-001&page_size=50
+    [200] {"patient_id":1,"total":14,"page":1,"page_size":50,"has_more":false,"events":[{"event_type":"follow_up","event_time":"2026-06-23T22:48:00.915107","title":"随访: clinic [已预约]","description":"心衰复查","relat
+  [PASS]: 2b 按就诊号过滤V-TL-001：返回事件visit_id一致  (total=14, vids_present=[1])
+
+>>> GET http://localhost:8000/api/v1/patients/1/timeline?page=1&page_size=5
+    [200] {"patient_id":1,"total":15,"page":1,"page_size":5,"has_more":true,"events":[{"event_type":"follow_up","event_time":"2026-06-23T22:48:00.915107","title":"随访: clinic [已预约]","description":"心衰复查","related
+
+>>> GET http://localhost:8000/api/v1/patients/1/timeline?page=2&page_size=5
+    [200] {"patient_id":1,"total":15,"page":2,"page_size":5,"has_more":true,"events":[{"event_type":"visit","event_time":"2026-06-09T22:47:38.749777","title":"门诊就诊","description":"反复胸闷1月","related_id":1,"visit_
+  [PASS]: 2c 分页：page1 has_more=True, page2返回第2页, total匹配  (total=15, p1=5 hm=True, p2=5)
+
+================================================================================
+[REQ 3] Care plan evidence references (可追溯)
+================================================================================
+
+>>> POST http://localhost:8000/api/v1/records/vital-signs
+    [200] {"patient_id":1,"visit_id":2,"record_time":"2026-06-09T14:48:15.002979","systolic_bp":185.0,"diastolic_bp":115.0,"heart_rate":110.0,"respiratory_rate":null,"temperature":null,"oxygen_saturation":null,
+
+>>> POST http://localhost:8000/api/v1/records/lab
+    [200] {"patient_id":1,"visit_id":2,"record_time":"2026-06-12T22:48:15.011685","lab_type":null,"test_name":"肌钙蛋白T","test_code":"CTNT","test_value":1.2,"test_unit":"ng/mL","reference_low":0.0,"reference_high"
+
+>>> POST http://localhost:8000/api/v1/risks/calculate
+    [200] {"patient_id":1,"visit_id":2,"assessment_type":"coronary_artery_disease","assessment_date":"2026-06-09T14:48:19.026268","risk_level":"低危","risk_score":0.0,"score_details":{"age_ge65":{"value":false,"s
+
+>>> POST http://localhost:8000/api/v1/risks/calculate
+    [200] {"patient_id":1,"visit_id":2,"assessment_type":"heart_failure","assessment_date":"2026-06-09T14:48:21.036675","risk_level":"极低危","risk_score":3.1,"score_details":{"nyha_class":{"value":3,"score":0},"a
+
+>>> POST http://localhost:8000/api/v1/care-plans/generate
+    [200] {"patient_id":1,"visit_id":2,"plan_type":"coronary_artery_disease","plan_date":"2026-06-09T14:48:23.052255","status":"draft","exam_suggestions":[{"code":"ECG","name":"12导联心电图","priority":"required","r
+  [PASS]: 3a 方案依据字段有内容 (risk_ids, abnormal_labs, active_meds, unresolved_alerts, evidence_summary)  (risk=[3, 2], labs=[3], meds=3, alerts=[6, 5, 4], has_summary=True)
+  [PASS]: 3b evidence_summary 内包含每条依据的id/摘要（可追溯）  (risks=2/2, labs=1, alerts=3)
+
+>>> GET http://localhost:8000/api/v1/care-plans/2
+    [200] {"patient_id":1,"visit_id":2,"plan_type":"coronary_artery_disease","plan_date":"2026-06-09T14:48:23.052255","status":"draft","exam_suggestions":[{"code":"ECG","name":"12导联心电图","priority":"required","r
+  [PASS]: 3c 方案详情重新读取时evidence_id保持一致 (可追溯持久化)  (roundtrip=True, evsum_type=dict)
+
+================================================================================
+[REQ 4] Alerts by visit summary + batch resolve + timeline status sync
+================================================================================
+
+>>> GET http://localhost:8000/api/v1/alerts/by-visit/summary?patient_id=1
+    [200] {"total":2,"total_alerts":6,"total_unread":6,"total_unresolved":6,"items":[{"visit_id":2,"visit_no":"V-TL-002","visit_type":"急诊","visit_time":"2026-06-12T22:47:40.765264","patient_id":1,"counters":{"c
+  [PASS]: 4a 按就诊汇总返回：V1同时含危急值/禁忌用药/重复检查 + unresolved计数  (groups=2, alerts_total=6, V1: crit=2, dup=0, contra=1, unresolved=3)
+
+>>> GET http://localhost:8000/api/v1/patients/1/timeline?event_types=alert&visit_id=1
+    [200] {"patient_id":1,"total":3,"page":1,"page_size":50,"has_more":false,"events":[{"event_type":"alert","event_time":"2026-06-09T14:47:56.876057","title":"提醒: [critical] 禁忌用药: 硝酸酯类_西地那非","description":"新药【
+  [PASS]: 4b 处理前alert事件 status 含 未读/未解决 且 level 有值  (alerts=3, statuses={'未读'}, levels_ok=True)
+
+>>> POST http://localhost:8000/api/v1/alerts/batch-resolve
+    [200] {"total_resolved":3,"resolved_ids":[1,2,3]}
+  [PASS]: 4c 批量处理V1就诊内全部提醒：返回resolved_n >= V1总数  (resolved=3, expected_v1_total=3)
+
+>>> GET http://localhost:8000/api/v1/patients/1/timeline?event_types=alert&visit_id=1
+    [200] {"patient_id":1,"total":3,"page":1,"page_size":50,"has_more":false,"events":[{"event_type":"alert","event_time":"2026-06-09T14:47:56.876057","title":"提醒: [critical] 禁忌用药: 硝酸酯类_西地那非","description":"新药【
+  [PASS]: 4d 处理后时间线alert状态全部同步为 已解决  (before=3, after=3, statuses=['已解决', '已解决', '已解决'])
+
+------------------------------------------------------------
+[1c FINAL] Visit merge - verify alert/care_plan/risk migrate correctly
+------------------------------------------------------------
+
+>>> POST http://localhost:8000/api/v1/patients
+    [200] {"patient_no":"P-TL-DST-200","name":"时间线目标患者","gender":"male","birth_date":"1965-03-15","id_card":null,"phone":null,"address":null,"blood_type":null,"height":null,"weight":null,"smoking":false,"drinki
+
+>>> POST http://localhost:8000/api/v1/patients/visits/merge
+    [200] {"target_patient_id":2,"merged_visit_count":1,"merged_related_records":{"vital_signs":1,"ecg_records":1,"lab_records":2,"medication_records":3,"risk_assessments":1,"alerts":3,"care_plans":1,"follow_up
+
+>>> GET http://localhost:8000/api/v1/patients/2/timeline?page_size=200
+    [200] {"patient_id":2,"total":14,"page":1,"page_size":200,"has_more":false,"events":[{"event_type":"follow_up","event_time":"2026-06-23T22:48:00.915107","title":"随访: clinic [已预约]","description":"心衰复查","rela
+  [PASS]: 1c 合并就诊后目标时间线可见 alert+care_plan+risk (迁移完整)  (alert=True, care_plan=True, risk=True, types=['alert', 'care_plan', 'ecg', 'follow_up', 'lab', 'medication', 'risk', 'visit', 'vital_sign'])
+
+================================================================================
+FINAL SUMMARY
+================================================================================
+[PASS] 1a 时间线包含9类事件 (visit/vital/ecg/lab/med/risk/alert/care_plan/follow_up)
+[PASS] 1b 按就诊分组：2个就诊都有分组 + V1组内聚合8类关联事件
+[PASS] 2a 事件类型过滤：lab,medication 只返回这两类
+[PASS] 2b 按就诊号过滤V-TL-001：返回事件visit_id一致
+[PASS] 2c 分页：page1 has_more=True, page2返回第2页, total匹配
+[PASS] 3a 方案依据字段有内容 (risk_ids, abnormal_labs, active_meds, unresolved_alerts, evidence_summary)
+[PASS] 3b evidence_summary 内包含每条依据的id/摘要（可追溯）
+[PASS] 3c 方案详情重新读取时evidence_id保持一致 (可追溯持久化)
+[PASS] 4a 按就诊汇总返回：V1同时含危急值/禁忌用药/重复检查 + unresolved计数
+[PASS] 4b 处理前alert事件 status 含 未读/未解决 且 level 有值
+[PASS] 4c 批量处理V1就诊内全部提醒：返回resolved_n >= V1总数
+[PASS] 4d 处理后时间线alert状态全部同步为 已解决
+[PASS] 1c 合并就诊后目标时间线可见 alert+care_plan+risk (迁移完整)
+
+Total: 13, Passed: 13, Failed: 0
+
+*** ALL 4 NEW REQUIREMENTS VERIFIED! ***

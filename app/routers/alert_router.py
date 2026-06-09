@@ -1,9 +1,11 @@
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Header
+from typing import Optional, List
+from fastapi import APIRouter, Depends, HTTPException, Query, Header, Body
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.risk_alert import (
     AlertResponse, AlertListResponse, AlertUpdate,
+    AlertBatchResolveRequest, AlertBatchResolveResponse,
+    VisitAlertSummaryListResponse,
 )
 from app.services.alert_service import AlertRuleService
 
@@ -81,6 +83,36 @@ def resolve_alert(
     if not alert:
         raise HTTPException(status_code=404, detail="提醒不存在")
     return alert
+
+
+@router.get("/by-visit/summary", response_model=VisitAlertSummaryListResponse, summary="按就诊维度汇总提醒")
+def list_alerts_by_visit(
+    patient_id: Optional[int] = Query(None),
+    visit_id: Optional[int] = Query(None),
+    visit_no: Optional[str] = Query(None),
+    unresolved_only: bool = Query(False),
+    unread_only: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    return AlertRuleService.list_alerts_by_visit(
+        db, patient_id, visit_id, visit_no, unresolved_only, unread_only
+    )
+
+
+@router.post("/batch-resolve", response_model=AlertBatchResolveResponse, summary="批量标记提醒已解决")
+def batch_resolve_alerts(
+    req: AlertBatchResolveRequest = Body(...),
+    x_doctor_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    if not req.alert_ids and not req.resolve_all_in_visit and not req.patient_id:
+        raise HTTPException(status_code=400, detail="请指定alert_ids、resolve_all_in_visit+visit_id或patient_id")
+    if req.resolve_all_in_visit and not req.visit_id:
+        raise HTTPException(status_code=400, detail="resolve_all_in_visit需要同时指定visit_id")
+    return AlertRuleService.batch_resolve_alerts(
+        db, req.patient_id, req.visit_id, req.alert_ids,
+        req.resolve_all_in_visit, req.resolve_note, x_doctor_id,
+    )
 
 
 @router.get("/rules/thresholds", summary="获取危急值阈值配置")

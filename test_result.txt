@@ -1,4 +1,4 @@
-STARTING TEST at 2026-06-09T22:10:34.814838
+STARTING TEST at 2026-06-09T22:48:59.204131
 ================================================================================
 Cardio Assist - 4 Requirements Regression Test
 ================================================================================
@@ -16,21 +16,21 @@ Cardio Assist - 4 Requirements Regression Test
 >>> POST http://localhost:8000/api/v1/records/lab
     [200] OK
 
->>> GET http://localhost:8000/api/v1/alerts?patient_id=1&alert_type=duplicate_exam
+>>> GET http://localhost:8000/api/v1/alerts?patient_id=3&alert_type=duplicate_exam
     [200] OK
   [PASS]: 1a First cTnI -> NO duplicate alert  -> alerts=0
 
 >>> POST http://localhost:8000/api/v1/records/lab
     [200] OK
 
->>> GET http://localhost:8000/api/v1/alerts?patient_id=1&alert_type=duplicate_exam&limit=50
+>>> GET http://localhost:8000/api/v1/alerts?patient_id=3&alert_type=duplicate_exam&limit=50
     [200] OK
   [PASS]: 1b Second cTnI -> SHOULD have duplicate alert  -> related-alerts=1, title=重复检查提示: 肌钙蛋白I
 
 >>> POST http://localhost:8000/api/v1/records/lab/batch
     [200] OK
 
->>> GET http://localhost:8000/api/v1/alerts?patient_id=1&alert_type=duplicate_exam&limit=100
+>>> GET http://localhost:8000/api/v1/alerts?patient_id=3&alert_type=duplicate_exam&limit=100
     [200] OK
   [PASS]: 1c In-batch duplicate (BNP x2) detected  -> in_batch=1
   [PASS]: 1c History duplicate (cTnI again) detected  -> history=1
@@ -51,7 +51,7 @@ Cardio Assist - 4 Requirements Regression Test
 >>> POST http://localhost:8000/api/v1/records/medications
     [200] OK
 
->>> GET http://localhost:8000/api/v1/alerts?patient_id=2&alert_type=drug_contraindication&limit=50
+>>> GET http://localhost:8000/api/v1/alerts?patient_id=4&alert_type=drug_contraindication&limit=50
     [200] OK
   [PASS]: 2a Nitrate -> Sildenafil intercepted  -> alerts=1, reason=新药【西地那非片】与历史用药【硝酸甘油片】存在配伍禁忌（类别: 硝酸酯类_西地那非）。
 组合: nitroglycerin, nitroglycerine, 硝酸甘油, 单硝酸异山梨酯, isosorbide + sildenafil, 西
@@ -68,7 +68,7 @@ Cardio Assist - 4 Requirements Regression Test
 >>> POST http://localhost:8000/api/v1/records/medications
     [200] OK
 
->>> GET http://localhost:8000/api/v1/alerts?patient_id=3&alert_type=drug_contraindication&limit=50
+>>> GET http://localhost:8000/api/v1/alerts?patient_id=5&alert_type=drug_contraindication&limit=50
     [200] OK
   [PASS]: 2b Sildenafil -> Nitrate intercepted (reverse)  -> alerts=1
 
@@ -81,7 +81,7 @@ Cardio Assist - 4 Requirements Regression Test
 >>> POST http://localhost:8000/api/v1/records/medications/batch
     [200] OK
 
->>> GET http://localhost:8000/api/v1/alerts?patient_id=4&alert_type=drug_contraindication&limit=50
+>>> GET http://localhost:8000/api/v1/alerts?patient_id=6&alert_type=drug_contraindication&limit=50
     [200] OK
   [PASS]: 2c Same batch ACEI+ARB intercepted (bidirectional)  -> alerts=2, titles=['禁忌用药: ACEI_ARB_联用', '禁忌用药: ACEI_ARB_联用']
 
@@ -119,7 +119,7 @@ Cardio Assist - 4 Requirements Regression Test
 >>> POST http://localhost:8000/api/v1/patients
     [200] OK
 
->>> GET http://localhost:8000/api/v1/patients/6/timeline
+>>> GET http://localhost:8000/api/v1/patients/8/timeline
     [200] OK
   [PASS]: 3a Target patient timeline EMPTY before merge  -> before merge events=0
 
@@ -128,7 +128,7 @@ Cardio Assist - 4 Requirements Regression Test
 >>> POST http://localhost:8000/api/v1/patients/visits/merge
     [200] OK
 {
-  "target_patient_id": 6,
+  "target_patient_id": 8,
   "merged_visit_count": 1,
   "merged_related_records": {
     "vital_signs": 1,
@@ -143,17 +143,17 @@ Cardio Assist - 4 Requirements Regression Test
   "note": null
 }
 
->>> GET http://localhost:8000/api/v1/patients/6/timeline
+>>> GET http://localhost:8000/api/v1/patients/8/timeline
     [200] OK
-  [PASS]: 3b Target timeline HAS events after merge  -> events now=7
-  [PASS]: 3c visit migrated  -> types=['follow_up', 'lab', 'ecg', 'risk', 'medication', 'vital_sign', 'visit']
+  [PASS]: 3b Target timeline HAS events after merge  -> events now=9
+  [PASS]: 3c visit migrated  -> types=['follow_up', 'lab', 'ecg', 'care_plan', 'risk', 'medication', 'alert', 'vital_sign', 'visit']
   [PASS]: 3d vital_sign migrated
   [PASS]: 3e ecg migrated
   [PASS]: 3f lab migrated
   [PASS]: 3g medication migrated
   [PASS]: 3h risk migrated
   [PASS]: 3i follow_up migrated
-  Event type distribution: {'follow_up': 1, 'lab': 1, 'ecg': 1, 'risk': 1, 'medication': 1, 'vital_sign': 1, 'visit': 1}
+  Event type distribution: {'follow_up': 1, 'lab': 1, 'ecg': 1, 'care_plan': 1, 'risk': 1, 'medication': 1, 'alert': 1, 'vital_sign': 1, 'visit': 1}
 
 ============================================================
 [Scene 4] Multi-patient batch: no cross-contamination
@@ -177,15 +177,15 @@ Cardio Assist - 4 Requirements Regression Test
 >>> POST http://localhost:8000/api/v1/records/medications/batch
     [200] OK
 
->>> GET http://localhost:8000/api/v1/alerts?patient_id=7&alert_type=drug_contraindication&limit=50
+>>> GET http://localhost:8000/api/v1/alerts?patient_id=9&alert_type=drug_contraindication&limit=50
     [200] OK
   [PASS]: 4a Patient X (Warfarin + Ibuprofen) INTERCEPTED  -> X alerts=1, titles=['禁忌用药: 华法林_NSAIDs']
 
->>> GET http://localhost:8000/api/v1/alerts?patient_id=8&alert_type=drug_contraindication&limit=50
+>>> GET http://localhost:8000/api/v1/alerts?patient_id=10&alert_type=drug_contraindication&limit=50
     [200] OK
   [PASS]: 4b Patient Y (Amoxicillin) NO false alert  -> Y alerts=0
 
->>> GET http://localhost:8000/api/v1/alerts?patient_id=9&alert_type=drug_contraindication&limit=50
+>>> GET http://localhost:8000/api/v1/alerts?patient_id=11&alert_type=drug_contraindication&limit=50
     [200] OK
   [PASS]: 4c Patient Z (Spironolactone + KCl) INTERCEPTED  -> Z alerts=2, titles=['禁忌用药: 螺内酯_补钾剂', '禁忌用药: 螺内酯_补钾剂']
   [PASS]: 4d NO cross-patient contamination

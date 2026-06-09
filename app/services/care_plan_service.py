@@ -196,20 +196,92 @@ class CarePlanService:
     def generate_care_plan(db: Session, req: CarePlanGenerateRequest) -> CarePlan:
         from app.services.risk_engine_service import RiskEngineService
         from app.services.record_service import RecordService
+        from app.models.risk_alert import Alert
         from datetime import datetime, timedelta
 
         patient_id = req.patient_id
         visit_id = req.visit_id
 
         risk_summaries = {}
+        evidence_risks = []
         if req.include_risk_assessment:
             for atype in ["heart_failure", "atrial_fibrillation", "coronary_artery_disease"]:
                 latest = RiskEngineService.get_latest_assessment(db, patient_id, atype)
                 if latest:
                     risk_summaries[atype] = latest.risk_level
+                    if not visit_id or latest.visit_id == visit_id:
+                        evidence_risks.append({
+                            "id": latest.id,
+                            "assessment_type": latest.assessment_type,
+                            "risk_level": latest.risk_level,
+                            "risk_score": latest.risk_score,
+                            "assessment_date": latest.assessment_date.isoformat() if latest.assessment_date else None,
+                        })
 
         existing_labs = RecordService.list_lab_records(db, patient_id, limit=500)
+        if visit_id:
+            visit_labs = [l for l in existing_labs if l.visit_id == visit_id]
+            abnormal_labs = [l for l in visit_labs if l.is_abnormal]
+        else:
+            abnormal_labs = [l for l in existing_labs if l.is_abnormal]
+            abnormal_labs = sorted(abnormal_labs, key=lambda x: x.record_time or x.created_at, reverse=True)[:20]
+        evidence_abnormal_labs = [
+            {
+                "id": l.id,
+                "test_code": l.test_code,
+                "test_name": l.test_name,
+                "test_value": l.test_value,
+                "test_unit": l.test_unit,
+                "abnormal_flag": l.abnormal_flag,
+                "reference_low": l.reference_low,
+                "reference_high": l.reference_high,
+                "record_time": l.record_time.isoformat() if l.record_time else None,
+            }
+            for l in abnormal_labs
+        ]
+
         current_meds = RecordService.list_medications(db, patient_id, active_only=True)
+        if visit_id:
+            visit_meds = [m for m in current_meds if m.visit_id == visit_id]
+            if not visit_meds:
+                visit_meds = current_meds
+        else:
+            visit_meds = current_meds
+        evidence_active_meds = [
+            {
+                "id": m.id,
+                "drug_name": m.drug_name,
+                "generic_name": m.generic_name,
+                "dosage": m.dosage,
+                "frequency": m.frequency,
+                "route": m.route,
+                "start_date": m.start_date.isoformat() if m.start_date else None,
+                "drug_category": m.drug_category,
+            }
+            for m in visit_meds
+        ]
+
+        unresolved_alerts_query = db.query(Alert).filter(
+            Alert.patient_id == patient_id,
+            Alert.is_resolved == False,
+        )
+        if visit_id:
+            unresolved_alerts_query = unresolved_alerts_query.filter(Alert.visit_id == visit_id)
+        unresolved_alerts = unresolved_alerts_query.order_by(Alert.alert_time.desc()).limit(50).all()
+        evidence_unresolved_alerts = [
+            {
+                "id": a.id,
+                "alert_type": a.alert_type,
+                "alert_level": a.alert_level,
+                "title": a.title,
+                "content": a.content,
+                "related_record_type": a.related_record_type,
+                "related_record_id": a.related_record_id,
+                "alert_time": a.alert_time.isoformat() if a.alert_time else None,
+            }
+            for a in unresolved_alerts
+        ]
+
         latest_vs = RecordService.list_vital_signs(db, patient_id, limit=1)[0] if RecordService.list_vital_signs(db, patient_id, limit=1) else None
 
         patient = db.query(Patient).filter(Patient.id == patient_id).first()
@@ -242,31 +314,27 @@ class CarePlanService:
         lifestyle_recs.append("保证充足睡眠(7-8小时/日)，避免熬夜和过度劳累")
         lifestyle_recs.append("心理压力管理，保持情绪稳定")
 
-        if hf_risk := risk_summaries.get("heart_failure"):
-            if hf_risk in ["高危", "极高危"]:
-                dietary_recs.append("严格限钠: <2g钠/日(约<5g食盐)")
-                dietary_recs.append("限制液体入量: 1500-2000mL/日，记录24h出入量")
-            else:
-                dietary_recs.append("中等限钠: <3g钠/日(约<7.5g食盐)")
+        hf_risk = risk_summaries.get("heart_failure")
+        if hf_risk in ["高危", "极高危"]:
+            dietary_recs.append("严格限钠: <2g钠/日(约<5g食盐)")
+            dietary_recs.append("限制液体入量: 1500-2000mL/日，记录24h出入量")
         else:
-            dietary_recs.append("DASH饮食: 富钾低钠，多蔬果全谷物，低脂乳制品")
+            dietary_recs.append("中等限钠: <3g钠/日(约<7.5g食盐)")
+        dietary_recs.append("DASH饮食: 富钾低钠，多蔬果全谷物，低脂乳制品")
         dietary_recs.append("减少饱和脂肪和反式脂肪摄入，增加Omega-3脂肪酸")
         dietary_recs.append("控制总热量，维持健康体重(BMI 18.5-23.9)")
 
-        if hf_risk := risk_summaries.get("heart_failure"):
-            if hf_risk in ["极高危"]:
-                exercise_recs.append("急性期卧床休息，症状稳定后在监护下逐步开始活动")
-            elif hf_risk == "高危":
-                exercise_recs.append("心脏康复训练，从低强度开始，如床边坐起、慢走5-10分钟/次")
-            else:
-                exercise_recs.append("规律有氧运动: 快走30min×5次/周，可叠加阻力训练")
-        elif cad_risk := risk_summaries.get("coronary_artery_disease"):
-            if cad_risk in ["极高危", "高危"]:
-                exercise_recs.append("心脏康复计划，监护下中等强度有氧运动")
-            else:
-                exercise_recs.append("中等强度有氧运动 150min/周 + 阻力训练 2次/周")
+        cad_risk = risk_summaries.get("coronary_artery_disease")
+        if hf_risk in ["极高危"]:
+            exercise_recs.append("急性期卧床休息，症状稳定后在监护下逐步开始活动")
+        elif hf_risk == "高危":
+            exercise_recs.append("心脏康复训练，从低强度开始，如床边坐起、慢走5-10分钟/次")
+        elif hf_risk:
+            exercise_recs.append("规律有氧运动: 快走30min×5次/周，可叠加阻力训练")
+        elif cad_risk in ["极高危", "高危"]:
+            exercise_recs.append("心脏康复计划，监护下中等强度有氧运动")
         else:
-            exercise_recs.append("每周150分钟中等强度有氧运动 + 每周2次肌肉力量训练")
+            exercise_recs.append("中等强度有氧运动 150min/周 + 阻力训练 2次/周")
 
         treatment_notes = []
         if risk_summaries:
@@ -275,6 +343,30 @@ class CarePlanService:
                 treatment_notes.append(f"【{name_map.get(rtype, rtype)}】风险等级: {rlevel}，需按对应路径管理")
         else:
             treatment_notes.append("暂无风险分层记录，建议完善评估后制定个体化方案")
+
+        evidence_summary = {
+            "generated_at": datetime.utcnow().isoformat(),
+            "visit_id": visit_id,
+            "risk_assessments": evidence_risks,
+            "abnormal_labs": evidence_abnormal_labs,
+            "active_medications": evidence_active_meds,
+            "unresolved_alerts": evidence_unresolved_alerts,
+            "latest_vital_sign": {
+                "id": latest_vs.id,
+                "systolic_bp": latest_vs.systolic_bp,
+                "diastolic_bp": latest_vs.diastolic_bp,
+                "heart_rate": latest_vs.heart_rate,
+                "record_time": latest_vs.record_time.isoformat() if latest_vs.record_time else None,
+            } if latest_vs else None,
+            "patient_profile": {
+                "age": (datetime.now().date() - patient.birth_date).days // 365 if patient and patient.birth_date else None,
+                "gender": patient.gender if patient else None,
+                "smoking": patient.smoking if patient else None,
+                "drinking": patient.drinking if patient else None,
+                "allergy_history": patient.allergy_history if patient else None,
+                "past_medical_history": patient.past_medical_history if patient else None,
+            } if patient else None,
+        }
 
         care_plan = CarePlan(
             patient_id=patient_id,
@@ -289,6 +381,11 @@ class CarePlanService:
             dietary_recommendations="\n".join(dietary_recs),
             exercise_recommendations="\n".join(exercise_recs),
             risk_assessment_summary=risk_summaries if risk_summaries else None,
+            evidence_risk_ids=[r["id"] for r in evidence_risks],
+            evidence_abnormal_lab_ids=[r["id"] for r in evidence_abnormal_labs],
+            evidence_active_med_ids=[r["id"] for r in evidence_active_meds],
+            evidence_unresolved_alert_ids=[r["id"] for r in evidence_unresolved_alerts],
+            evidence_summary=evidence_summary,
             author_id=req.author_id,
         )
         db.add(care_plan)

@@ -30,6 +30,21 @@ class AlertRuleService:
         "lactate": {"high": 2, "critical_high": 4, "unit": "mmol/L"},
     }
 
+    LAB_KEY_ALIASES = {
+        "troponin_i": ["ctni", "ctn-i", "肌钙蛋白i", "肌钙蛋白Ⅰ", "肌钙蛋白1"],
+        "troponin_t": ["ctnt", "ctn-t", "肌钙蛋白t", "肌钙蛋白Ⅱ", "肌钙蛋白2"],
+        "bnp": ["脑钠肽", "b型钠尿肽", "b型利钠肽"],
+        "nt_probnp": ["ntprobnp", "nt-probnp", "n端脑钠肽前体", "n端-probnp", "氨基末端脑钠肽前体"],
+        "ck_mb": ["ckmb", "ck-mb", "肌酸激酶同工酶", "肌酸激酶mb"],
+        "myoglobin": ["myo", "肌红蛋白", "肌血球素"],
+        "d_dimer": ["ddimer", "d-dimer", "d二聚体", "d-二聚体"],
+        "potassium": ["k", "k+", "血钾", "血清钾", "钾"],
+        "sodium": ["na", "na+", "血钠", "血清钠", "钠"],
+        "creatinine": ["cr", "crea", "肌酐", "血肌酐", "血清肌酐"],
+        "hemoglobin": ["hgb", "hb", "血红蛋白", "血色素"],
+        "lactate": ["lac", "乳酸", "血乳酸"],
+    }
+
     CONTRAINDICATION_RULES = [
         {
             "category": "硝酸酯类_西地那非",
@@ -178,7 +193,9 @@ class AlertRuleService:
 
         matched_key = None
         for key in AlertRuleService.CRITICAL_LAB_THRESHOLDS:
-            if key in test_code or key in test_name:
+            aliases = AlertRuleService.LAB_KEY_ALIASES.get(key, [])
+            all_keys = [key] + aliases
+            if any(k in test_code for k in all_keys) or any(k in test_name for k in all_keys):
                 matched_key = key
                 break
 
@@ -476,6 +493,189 @@ class AlertRuleService:
         db.commit()
         db.refresh(alert)
         return alert
+
+    @staticmethod
+    def list_alerts_by_visit(
+        db: Session,
+        patient_id: Optional[int] = None,
+        visit_id: Optional[int] = None,
+        visit_no: Optional[str] = None,
+        unresolved_only: bool = False,
+        unread_only: bool = False,
+    ):
+        from collections import defaultdict
+        from app.models.patient import Visit
+        from app.schemas.risk_alert import VisitAlertCounters, VisitAlertSummary
+
+        query = db.query(Alert)
+        if patient_id:
+            query = query.filter(Alert.patient_id == patient_id)
+        if visit_id:
+            query = query.filter(Alert.visit_id == visit_id)
+        if unresolved_only:
+            query = query.filter(Alert.is_resolved == False)
+        if unread_only:
+            query = query.filter(Alert.is_read == False)
+
+        alerts = query.order_by(Alert.alert_time.desc()).all()
+
+        visit_alerts: Dict[int, List[Alert]] = defaultdict(list)
+        no_visit_alerts = []
+        for a in alerts:
+            if a.visit_id:
+                visit_alerts[a.visit_id].append(a)
+            else:
+                no_visit_alerts.append(a)
+
+        visit_map = {}
+        vids_to_query = [vid for vid in visit_alerts.keys()]
+        if vids_to_query:
+            for v in db.query(Visit).filter(Visit.id.in_(vids_to_query)).all():
+                visit_map[v.id] = v
+
+        if visit_no:
+            matched = [v for v in visit_map.values() if v.visit_no == visit_no]
+            if matched:
+                visit_map = {v.id: v for v in matched}
+                visit_alerts = {v.id: visit_alerts[v.id] for v in matched if v.id in visit_alerts}
+            else:
+                visit_map, visit_alerts = {}, {}
+
+        results = []
+        t_unread = 0
+        t_unresolved = 0
+        t_alerts = len(alerts)
+        for v_id in sorted(visit_alerts.keys(), key=lambda i: visit_map[i].visit_date or visit_map[i].created_at, reverse=True):
+            if v_id not in visit_map:
+                continue
+            v = visit_map[v_id]
+            v_alerts = visit_alerts[v_id]
+            counters = VisitAlertCounters(total=len(v_alerts))
+            for a in v_alerts:
+                if a.alert_type == "critical_value":
+                    counters.critical_value += 1
+                elif a.alert_type == "abnormal_value":
+                    counters.abnormal_value += 1
+                elif a.alert_type == "drug_contraindication":
+                    counters.drug_contraindication += 1
+                elif a.alert_type == "duplicate_exam":
+                    counters.duplicate_exam += 1
+                else:
+                    counters.other += 1
+                if a.alert_level == "critical":
+                    counters.critical_count += 1
+                elif a.alert_level == "high":
+                    counters.high_count += 1
+                elif a.alert_level == "medium":
+                    counters.medium_count += 1
+                elif a.alert_level == "low":
+                    counters.low_count += 1
+                if not a.is_read:
+                    counters.unread_count += 1
+                    t_unread += 1
+                if not a.is_resolved:
+                    counters.unresolved_count += 1
+                    t_unresolved += 1
+            results.append(VisitAlertSummary(
+                visit_id=v.id,
+                visit_no=v.visit_no,
+                visit_type=v.visit_type,
+                visit_time=v.visit_date or v.created_at,
+                patient_id=v.patient_id,
+                counters=counters,
+                items=v_alerts,
+            ))
+
+        if no_visit_alerts:
+            counters = VisitAlertCounters(total=len(no_visit_alerts))
+            for a in no_visit_alerts:
+                if a.alert_type == "critical_value":
+                    counters.critical_value += 1
+                elif a.alert_type == "abnormal_value":
+                    counters.abnormal_value += 1
+                elif a.alert_type == "drug_contraindication":
+                    counters.drug_contraindication += 1
+                elif a.alert_type == "duplicate_exam":
+                    counters.duplicate_exam += 1
+                else:
+                    counters.other += 1
+                if a.alert_level == "critical":
+                    counters.critical_count += 1
+                elif a.alert_level == "high":
+                    counters.high_count += 1
+                elif a.alert_level == "medium":
+                    counters.medium_count += 1
+                elif a.alert_level == "low":
+                    counters.low_count += 1
+                if not a.is_read:
+                    counters.unread_count += 1
+                    t_unread += 1
+                if not a.is_resolved:
+                    counters.unresolved_count += 1
+                    t_unresolved += 1
+            first_pid = patient_id if patient_id else (no_visit_alerts[0].patient_id if no_visit_alerts else 0)
+            results.insert(0, VisitAlertSummary(
+                visit_id=0,
+                visit_no="未关联就诊",
+                visit_type="无就诊",
+                visit_time=min((a.alert_time or a.created_at for a in no_visit_alerts), default=None),
+                patient_id=first_pid,
+                counters=counters,
+                items=no_visit_alerts,
+            ))
+
+        if not unresolved_only and not unread_only:
+            for a in alerts:
+                if not a.is_read:
+                    pass
+                if not a.is_resolved:
+                    pass
+        else:
+            t_unread = sum(1 for a in alerts if not a.is_read)
+            t_unresolved = sum(1 for a in alerts if not a.is_resolved)
+
+        return {
+            "total": len(results),
+            "total_alerts": t_alerts,
+            "total_unread": t_unread,
+            "total_unresolved": t_unresolved,
+            "items": results,
+        }
+
+    @staticmethod
+    def batch_resolve_alerts(
+        db: Session,
+        patient_id: Optional[int] = None,
+        visit_id: Optional[int] = None,
+        alert_ids: Optional[List[int]] = None,
+        resolve_all_in_visit: bool = False,
+        resolve_note: Optional[str] = None,
+        doctor_id: Optional[str] = None,
+    ):
+        from datetime import datetime
+        query = db.query(Alert)
+        if alert_ids:
+            query = query.filter(Alert.id.in_(alert_ids))
+        elif resolve_all_in_visit and visit_id:
+            query = query.filter(Alert.visit_id == visit_id)
+        elif patient_id:
+            query = query.filter(Alert.patient_id == patient_id)
+        else:
+            return {"total_resolved": 0, "resolved_ids": []}
+
+        to_resolve = query.filter(Alert.is_resolved == False).all()
+        now = datetime.utcnow()
+        resolved_ids = []
+        for a in to_resolve:
+            a.is_resolved = True
+            a.resolve_time = now
+            a.resolve_note = resolve_note or a.resolve_note
+            a.is_read = True
+            if not a.read_by and doctor_id:
+                a.read_by = doctor_id
+            resolved_ids.append(a.id)
+        db.commit()
+        return {"total_resolved": len(resolved_ids), "resolved_ids": resolved_ids}
 
     @staticmethod
     def run_all_checks(

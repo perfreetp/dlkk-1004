@@ -16,6 +16,11 @@ class CarePlanBase(BaseModel):
     dietary_recommendations: Optional[str] = None
     exercise_recommendations: Optional[str] = None
     risk_assessment_summary: Optional[Dict[str, Any]] = None
+    evidence_risk_ids: Optional[List[int]] = None
+    evidence_abnormal_lab_ids: Optional[List[int]] = None
+    evidence_active_med_ids: Optional[List[int]] = None
+    evidence_unresolved_alert_ids: Optional[List[int]] = None
+    evidence_summary: Optional[Dict[str, Any]] = None
     author_id: Optional[str] = Field(None, max_length=50)
     reviewer_id: Optional[str] = Field(None, max_length=50)
 

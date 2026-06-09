@@ -96,9 +96,40 @@ class TimelineEvent(BaseModel):
     title: str
     description: str
     related_id: Optional[int] = None
+    visit_id: Optional[int] = None
+    visit_no: Optional[str] = None
+    status: Optional[str] = None
+    level: Optional[str] = None
     extra: Optional[Dict[str, Any]] = None
+
+
+class TimelineVisitGroup(BaseModel):
+    visit_id: int
+    visit_no: str
+    visit_type: str
+    visit_time: datetime
+    chief_complaint: Optional[str] = None
+    diagnosis: Optional[List[Dict[str, Any]]] = None
+    department: Optional[str] = None
+    events: List[TimelineEvent]
+
+
+class TimelineRequest(BaseModel):
+    patient_id: Optional[int] = None
+    event_types: Optional[List[str]] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    visit_id: Optional[int] = None
+    visit_no: Optional[str] = None
+    page: int = 1
+    page_size: int = 50
 
 
 class TimelineResponse(BaseModel):
     patient_id: int
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
     events: List[TimelineEvent]
+    visit_groups: Optional[List[TimelineVisitGroup]] = None
