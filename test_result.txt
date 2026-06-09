@@ -1,4 +1,4 @@
-STARTING TEST at 2026-06-09T23:37:01.011992
+STARTING TEST at 2026-06-10T00:56:00.877102
 ================================================================================
 Cardio Assist - 4 Requirements Regression Test
 ================================================================================
@@ -146,14 +146,14 @@ Cardio Assist - 4 Requirements Regression Test
 >>> GET http://localhost:8000/api/v1/patients/6/timeline
     [200] OK
   [PASS]: 3b Target timeline HAS events after merge  -> events now=9
-  [PASS]: 3c visit migrated  -> types=['follow_up', 'lab', 'ecg', 'care_plan', 'risk', 'medication', 'alert', 'vital_sign', 'visit']
+  [PASS]: 3c visit migrated  -> types=['follow_up', 'medication', 'lab', 'ecg', 'vital_sign', 'visit', 'care_plan', 'risk', 'alert']
   [PASS]: 3d vital_sign migrated
   [PASS]: 3e ecg migrated
   [PASS]: 3f lab migrated
   [PASS]: 3g medication migrated
   [PASS]: 3h risk migrated
   [PASS]: 3i follow_up migrated
-  Event type distribution: {'follow_up': 1, 'lab': 1, 'ecg': 1, 'care_plan': 1, 'risk': 1, 'medication': 1, 'alert': 1, 'vital_sign': 1, 'visit': 1}
+  Event type distribution: {'follow_up': 1, 'medication': 1, 'lab': 1, 'ecg': 1, 'vital_sign': 1, 'visit': 1, 'care_plan': 1, 'risk': 1, 'alert': 1}
 
 ============================================================
 [Scene 4] Multi-patient batch: no cross-contamination

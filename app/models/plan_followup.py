@@ -11,7 +11,7 @@ class CarePlan(Base):
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False)
     visit_id = Column(Integer, ForeignKey("visits.id"))
     plan_type = Column(String(50), nullable=False)
-    plan_date = Column(DateTime, default=datetime.utcnow)
+    plan_date = Column(DateTime, default=datetime.now)
     status = Column(String(20), default="draft")
     exam_suggestions = Column(JSON)
     medication_checklist = Column(JSON)
@@ -28,8 +28,8 @@ class CarePlan(Base):
     author_id = Column(String(50))
     reviewer_id = Column(String(50))
     review_time = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     patient = relationship("Patient", back_populates="care_plans")
 
@@ -40,6 +40,9 @@ class FollowUp(Base):
     id = Column(Integer, primary_key=True, index=True)
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False)
     visit_id = Column(Integer, ForeignKey("visits.id"))
+    care_plan_id = Column(Integer)  # 来源方案ID（兼容起见不加FK，方案删了不影响随访）
+    care_plan_snapshot = Column(JSON)  # 生成随访时的方案快照（{plan_id, plan_type, title/plan_title, exam_suggestion_text, author_id}）
+    plan_sync_status = Column(String(20), default="synced")  # synced/plan_updated/plan_withdrawn 提示医生方案有变更
     follow_up_type = Column(String(50), nullable=False)
     scheduled_date = Column(DateTime, nullable=False)
     actual_date = Column(DateTime)
@@ -59,7 +62,7 @@ class FollowUp(Base):
     reminder_time = Column(DateTime)
     reminder_method = Column(String(50))
     assigned_doctor_id = Column(String(50))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     patient = relationship("Patient", back_populates="follow_ups")

@@ -26,8 +26,8 @@ class Patient(Base):
     department = Column(String(50))
     doctor_id = Column(String(50))
     status = Column(String(20), default="active")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     visits = relationship("Visit", back_populates="patient", cascade="all, delete-orphan")
     vital_signs = relationship("VitalSign", back_populates="patient", cascade="all, delete-orphan")
@@ -47,7 +47,7 @@ class Visit(Base):
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False)
     visit_no = Column(String(50), unique=True, index=True, nullable=False)
     visit_type = Column(String(20), nullable=False)
-    visit_date = Column(DateTime, default=datetime.utcnow)
+    visit_date = Column(DateTime, default=datetime.now)
     department = Column(String(50))
     doctor_id = Column(String(50))
     chief_complaint = Column(Text)
@@ -55,6 +55,6 @@ class Visit(Base):
     diagnosis = Column(JSON)
     discharge_diagnosis = Column(JSON)
     is_emergency = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
     patient = relationship("Patient", back_populates="visits")

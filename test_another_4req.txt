@@ -1,5 +1,5 @@
 === ANOTHER 4 Reqs Regression Test (闭环+对比+汇总) ===
-Started: 2026-06-09T23:34:23.793301
+Started: 2026-06-10T01:01:14.596228
 
 [SETUP] 创建患者、2次就诊，分别录入差异数据
 
@@ -7,65 +7,65 @@ Started: 2026-06-09T23:34:23.793301
     [200] {"patient_no":"P-CMP-2024","name":"对比测试患者","gender":"male","birth_date":"1966-01-01","id_card":null,"phone":null,"address":null,"blood_type":null,"height":null,"weight":null,"smoking":false,"drinking"
 
 >>> POST http://localhost:8000/api/v1/patients/visits
-    [200] {"patient_id":1,"visit_no":"V-CMP-001","visit_type":"门诊","visit_date":"2026-05-10T23:34:25.865979","department":"心内科","doctor_id":null,"chief_complaint":"偶发胸闷","present_illness":null,"diagnosis":null,
+    [200] {"patient_id":1,"visit_no":"V-CMP-001","visit_type":"门诊","visit_date":"2026-05-11T01:01:16.684501","department":"心内科","doctor_id":null,"chief_complaint":"偶发胸闷","present_illness":null,"diagnosis":null,
 
 >>> POST http://localhost:8000/api/v1/records/vital-signs
-    [200] {"patient_id":1,"visit_id":1,"record_time":"2026-06-09T15:34:29.889622","systolic_bp":135.0,"diastolic_bp":82.0,"heart_rate":75.0,"respiratory_rate":null,"temperature":null,"oxygen_saturation":null,"s
+    [200] {"patient_id":1,"visit_id":1,"record_time":"2026-06-10T01:01:20.705412","systolic_bp":135.0,"diastolic_bp":82.0,"heart_rate":75.0,"respiratory_rate":null,"temperature":null,"oxygen_saturation":null,"s
 
 >>> POST http://localhost:8000/api/v1/records/lab
-    [200] {"patient_id":1,"visit_id":1,"record_time":"2026-05-10T23:34:29.895635","lab_type":null,"test_name":"BNP","test_code":"BNP","test_value":180.0,"test_unit":"pg/mL","reference_low":0.0,"reference_high":
+    [200] {"patient_id":1,"visit_id":1,"record_time":"2026-05-11T01:01:20.716770","lab_type":null,"test_name":"BNP","test_code":"BNP","test_value":180.0,"test_unit":"pg/mL","reference_low":0.0,"reference_high":
 
 >>> POST http://localhost:8000/api/v1/records/lab
-    [200] {"patient_id":1,"visit_id":1,"record_time":"2026-05-10T23:34:31.917521","lab_type":null,"test_name":"肌酐","test_code":"CREA","test_value":92.0,"test_unit":"μmol/L","reference_low":44.0,"reference_high"
+    [200] {"patient_id":1,"visit_id":1,"record_time":"2026-05-11T01:01:22.737323","lab_type":null,"test_name":"肌酐","test_code":"CREA","test_value":92.0,"test_unit":"μmol/L","reference_low":44.0,"reference_high"
 
 >>> POST http://localhost:8000/api/v1/records/medications
-    [200] {"patient_id":1,"visit_id":1,"order_time":"2026-06-09T15:34:35.934805","drug_code":null,"drug_name":"阿司匹林肠溶片","generic_name":"Aspirin","drug_category":null,"dosage":"100mg","frequency":"qd","route":"口
+    [200] {"patient_id":1,"visit_id":1,"order_time":"2026-06-10T01:01:26.756769","drug_code":null,"drug_name":"阿司匹林肠溶片","generic_name":"Aspirin","drug_category":null,"dosage":"100mg","frequency":"qd","route":"口
 
 >>> POST http://localhost:8000/api/v1/records/medications
-    [200] {"patient_id":1,"visit_id":1,"order_time":"2026-06-09T15:34:37.945969","drug_code":null,"drug_name":"美托洛尔缓释片","generic_name":"Metoprolol","drug_category":null,"dosage":"25mg","frequency":"qd","route":
+    [200] {"patient_id":1,"visit_id":1,"order_time":"2026-06-10T01:01:28.770591","drug_code":null,"drug_name":"美托洛尔缓释片","generic_name":"Metoprolol","drug_category":null,"dosage":"25mg","frequency":"qd","route":
 
 >>> POST http://localhost:8000/api/v1/risks/calculate
-    [200] {"patient_id":1,"visit_id":1,"assessment_type":"heart_failure","assessment_date":"2026-06-09T15:34:39.957166","risk_level":"中危","risk_score":43.8,"score_details":{"nyha_class":{"value":"II","score":2}
+    [200] {"patient_id":1,"visit_id":1,"assessment_type":"heart_failure","assessment_date":"2026-06-09T17:01:30.781181","risk_level":"中危","risk_score":43.8,"score_details":{"nyha_class":{"value":"II","score":2}
 
 >>> POST http://localhost:8000/api/v1/care-plans/generate
-    [200] {"patient_id":1,"visit_id":1,"plan_type":"hypertension","plan_date":"2026-06-09T15:34:41.978482","status":"draft","exam_suggestions":[{"code":"ECG","name":"12导联心电图","priority":"required","reason":"心脏基
+    [200] {"patient_id":1,"visit_id":1,"plan_type":"hypertension","plan_date":"2026-06-09T17:01:32.801816","status":"draft","exam_suggestions":[{"code":"ECG","name":"12导联心电图","priority":"required","reason":"心脏基
   V1方案ID: 1, evidence_risks=[1], evidence_active_med_ids数量=2
 
 >>> POST http://localhost:8000/api/v1/patients/visits
-    [200] {"patient_id":1,"visit_no":"V-CMP-002","visit_type":"急诊","visit_date":"2026-06-09T23:34:41.987523","department":"急诊心内科","doctor_id":null,"chief_complaint":"持续胸痛3小时","present_illness":null,"diagnosis":
+    [200] {"patient_id":1,"visit_no":"V-CMP-002","visit_type":"急诊","visit_date":"2026-06-10T01:01:32.810023","department":"急诊心内科","doctor_id":null,"chief_complaint":"持续胸痛3小时","present_illness":null,"diagnosis":
 
 >>> POST http://localhost:8000/api/v1/records/vital-signs
-    [200] {"patient_id":1,"visit_id":2,"record_time":"2026-06-09T15:34:46.004754","systolic_bp":168.0,"diastolic_bp":100.0,"heart_rate":102.0,"respiratory_rate":null,"temperature":null,"oxygen_saturation":null,
+    [200] {"patient_id":1,"visit_id":2,"record_time":"2026-06-10T01:01:36.825014","systolic_bp":168.0,"diastolic_bp":100.0,"heart_rate":102.0,"respiratory_rate":null,"temperature":null,"oxygen_saturation":null,
 
 >>> POST http://localhost:8000/api/v1/records/lab
-    [200] {"patient_id":1,"visit_id":2,"record_time":"2026-06-09T23:34:46.010141","lab_type":null,"test_name":"BNP","test_code":"BNP","test_value":1500.0,"test_unit":"pg/mL","reference_low":0.0,"reference_high"
+    [200] {"patient_id":1,"visit_id":2,"record_time":"2026-06-10T01:01:36.830865","lab_type":null,"test_name":"BNP","test_code":"BNP","test_value":1500.0,"test_unit":"pg/mL","reference_low":0.0,"reference_high"
 
 >>> POST http://localhost:8000/api/v1/records/lab
-    [200] {"patient_id":1,"visit_id":2,"record_time":"2026-06-09T23:34:48.023858","lab_type":null,"test_name":"肌酐","test_code":"CREA","test_value":92.0,"test_unit":"μmol/L","reference_low":44.0,"reference_high"
+    [200] {"patient_id":1,"visit_id":2,"record_time":"2026-06-10T01:01:38.849443","lab_type":null,"test_name":"肌酐","test_code":"CREA","test_value":92.0,"test_unit":"μmol/L","reference_low":44.0,"reference_high"
 
 >>> POST http://localhost:8000/api/v1/records/lab
-    [200] {"patient_id":1,"visit_id":2,"record_time":"2026-06-09T23:34:50.036073","lab_type":null,"test_name":"肌钙蛋白T","test_code":"CTNT","test_value":2.3,"test_unit":"ng/mL","reference_low":0.0,"reference_high"
+    [200] {"patient_id":1,"visit_id":2,"record_time":"2026-06-10T01:01:40.864986","lab_type":null,"test_name":"肌钙蛋白T","test_code":"CTNT","test_value":2.3,"test_unit":"ng/mL","reference_low":0.0,"reference_high"
 
 >>> POST http://localhost:8000/api/v1/records/medications
-    [200] {"patient_id":1,"visit_id":2,"order_time":"2026-06-09T15:34:54.055361","drug_code":null,"drug_name":"阿司匹林肠溶片","generic_name":"Aspirin","drug_category":null,"dosage":"100mg","frequency":"qd","route":"口
+    [200] {"patient_id":1,"visit_id":2,"order_time":"2026-06-10T01:01:44.884436","drug_code":null,"drug_name":"阿司匹林肠溶片","generic_name":"Aspirin","drug_category":null,"dosage":"100mg","frequency":"qd","route":"口
 
 >>> POST http://localhost:8000/api/v1/records/medications
-    [200] {"patient_id":1,"visit_id":2,"order_time":"2026-06-09T15:34:56.065950","drug_code":null,"drug_name":"阿托伐他汀钙片","generic_name":"Atorvastatin","drug_category":null,"dosage":"20mg","frequency":"qn","route
+    [200] {"patient_id":1,"visit_id":2,"order_time":"2026-06-10T01:01:46.898457","drug_code":null,"drug_name":"阿托伐他汀钙片","generic_name":"Atorvastatin","drug_category":null,"dosage":"20mg","frequency":"qn","route
 
 >>> POST http://localhost:8000/api/v1/records/medications
-    [200] {"patient_id":1,"visit_id":2,"order_time":"2026-06-09T15:34:58.075994","drug_code":null,"drug_name":"硝酸甘油片","generic_name":"Nitroglycerin","drug_category":null,"dosage":"0.5mg","frequency":"prn","rout
+    [200] {"patient_id":1,"visit_id":2,"order_time":"2026-06-10T01:01:48.908248","drug_code":null,"drug_name":"硝酸甘油片","generic_name":"Nitroglycerin","drug_category":null,"dosage":"0.5mg","frequency":"prn","rout
 
 >>> POST http://localhost:8000/api/v1/records/medications
-    [200] {"patient_id":1,"visit_id":2,"order_time":"2026-06-09T15:35:00.085782","drug_code":null,"drug_name":"西地那非片","generic_name":"Sildenafil","drug_category":null,"dosage":"50mg","frequency":"qd","route":"口
+    [200] {"patient_id":1,"visit_id":2,"order_time":"2026-06-10T01:01:50.916230","drug_code":null,"drug_name":"西地那非片","generic_name":"Sildenafil","drug_category":null,"dosage":"50mg","frequency":"qd","route":"口
 
 >>> POST http://localhost:8000/api/v1/risks/calculate
-    [200] {"patient_id":1,"visit_id":2,"assessment_type":"heart_failure","assessment_date":"2026-06-09T15:35:02.100353","risk_level":"极高危","risk_score":90.6,"score_details":{"nyha_class":{"value":"IV","score":4
+    [200] {"patient_id":1,"visit_id":2,"assessment_type":"heart_failure","assessment_date":"2026-06-09T17:01:52.931803","risk_level":"极高危","risk_score":90.6,"score_details":{"nyha_class":{"value":"IV","score":4
 
 >>> POST http://localhost:8000/api/v1/risks/calculate
-    [200] {"patient_id":1,"visit_id":2,"assessment_type":"coronary_artery_disease","assessment_date":"2026-06-09T15:35:04.110156","risk_level":"低危","risk_score":0.0,"score_details":{"age_ge65":{"value":false,"s
+    [200] {"patient_id":1,"visit_id":2,"assessment_type":"coronary_artery_disease","assessment_date":"2026-06-09T17:01:54.942159","risk_level":"低危","risk_score":0.0,"score_details":{"age_ge65":{"value":false,"s
 
 >>> POST http://localhost:8000/api/v1/care-plans/generate
-    [200] {"patient_id":1,"visit_id":2,"plan_type":"coronary_artery_disease","plan_date":"2026-06-09T15:35:06.123431","status":"draft","exam_suggestions":[{"code":"ECG","name":"12导联心电图","priority":"required","r
+    [200] {"patient_id":1,"visit_id":2,"plan_type":"coronary_artery_disease","plan_date":"2026-06-09T17:01:56.957076","status":"draft","exam_suggestions":[{"code":"ECG","name":"12导联心电图","priority":"required","r
   V2方案ID: 2, evidence_risks数量=2, evidence_active_med_ids数量=4
 
 ================================================================================
@@ -74,7 +74,7 @@ Started: 2026-06-09T23:34:23.793301
   [PASS]: 1a V2方案依据严格隔离：不含V1下的美托洛尔(Metoprolol)  (ids数量=4, 药品通用名=['Sildenafil', 'Nitroglycerin', 'Atorvastatin', 'Aspirin'])
 
 >>> GET http://localhost:8000/api/v1/care-plans/2
-    [200] {"patient_id":1,"visit_id":2,"plan_type":"coronary_artery_disease","plan_date":"2026-06-09T15:35:06.123431","status":"draft","exam_suggestions":[{"code":"ECG","name":"12导联心电图","priority":"required","r
+    [200] {"patient_id":1,"visit_id":2,"plan_type":"coronary_artery_disease","plan_date":"2026-06-09T17:01:56.957076","status":"draft","exam_suggestions":[{"code":"ECG","name":"12导联心电图","priority":"required","r
   [PASS]: 1b 方案详情evidence_details包含4组(风险/异常检验/用药/未处理提醒)  (groups: risk=2, labs=2, meds=4, alerts=4)
   [PASS]: 1c evidence_details内每项都有id可追溯到原始记录  (risk_ids=[2, 3], grp_risk有id=True)
 
@@ -83,8 +83,8 @@ Started: 2026-06-09T23:34:23.793301
 ================================================================================
 
 >>> GET http://localhost:8000/api/v1/patients/1/visits/compare?visit_id1=1&visit_id2=2
-    [200] {"patient_id":1,"visit1_id":1,"visit2_id":2,"visit1_no":"V-CMP-001","visit2_no":"V-CMP-002","visit1_time":"2026-05-10T23:34:25.865979","visit2_time":"2026-06-09T23:34:41.987523","vital_signs":[{"name"
-  [PASS]: 2a 生命体征对比：收缩压↑(135→168), 心率↑(75→102), delta计算正确  (sbp: {'name': '收缩压', 'code': 'systolic_bp', 'unit': 'mmHg', 'v1_value': 135.0, 'v2_value': 168.0, 'change_type': 'increased', 'delta': 33.0, 'level': None}; hr: {'name': '心率', 'code': 'heart_rate', 'unit': 'bpm', 'v1_value': 75.0, 'v2_value': 102.0, 'change_type': 'increased', 'delta': 27.0, 'level': None})
+    [200] {"patient_id":1,"visit1_id":1,"visit2_id":2,"visit1_no":"V-CMP-001","visit2_no":"V-CMP-002","visit1_time":"2026-05-11T01:01:16.684501","visit2_time":"2026-06-10T01:01:32.810023","vital_signs":[{"name"
+  [PASS]: 2a 生命体征对比：收缩压↑(135→168), 心率↑(75→102), delta计算正确  (sbp: {'name': '收缩压', 'code': 'systolic_bp', 'unit': 'mmHg', 'v1_value': 135.0, 'v2_value': 168.0, 'change_type': 'increased', 'delta': 33.0, 'level': 'abnormal_v2', 'v1_details': {'value': 135.0, 'unit': 'mmHg', 'is_abnormal': False, 'reference_low': 90.0, 'reference_high': 140.0}, 'v2_details': {'value': 168.0, 'unit': 'mmHg', 'is_abnormal': True, 'reference_low': 90.0, 'reference_high': 140.0}, 'abnormal_change': 'worsened'}; hr: {'name': '心率', 'code': 'heart_rate', 'unit': 'bpm', 'v1_value': 75.0, 'v2_value': 102.0, 'change_type': 'increased', 'delta': 27.0, 'level': 'abnormal_v2', 'v1_details': {'value': 75.0, 'unit': 'bpm', 'is_abnormal': False, 'reference_low': 60.0, 'reference_high': 100.0}, 'v2_details': {'value': 102.0, 'unit': 'bpm', 'is_abnormal': True, 'reference_low': 60.0, 'reference_high': 100.0}, 'abnormal_change': 'worsened'})
   [PASS]: 2b 检验对比：BNP increased, CTNT new(V2新增), CREA unchanged  (BNP: increased, CTNT: new, CREA: unchanged, ALL_LABS=[{"c": "BNP", "t": "increased", "v1": 180.0, "v2": 1500.0}, {"c": "CREA", "t": "unchanged", "v1": 92.0, "v2": 92.0}, {"c": "CTNT", "t": "new", "v1": null, "v2": 2.3}])
   [PASS]: 2c 用药对比：阿司匹林continued, 阿托伐他汀new(V2新增), 美托洛尔removed(V2无)  (aspirin: continued, atorvastatin: new, metoprolol: removed)
   [PASS]: 2d 风险对比：心衰等级升高increased, CAD new(V2新增)  (HF: 中危→极高危 [increased]; CAD: new; ALL_RISKS=[{"c": "coronary_artery_disease", "t": "new", "v1": null, "v2": "低危"}, {"c": "heart_failure", "t": "increased", "v1": "中危", "v2": "极高危"}])
@@ -95,26 +95,26 @@ Started: 2026-06-09T23:34:23.793301
 ================================================================================
 
 >>> GET http://localhost:8000/api/v1/alerts/by-visit/summary?patient_id=1
-    [200] {"total":2,"total_alerts":6,"total_unread":6,"total_unresolved":6,"items":[{"visit_id":2,"visit_no":"V-CMP-002","visit_type":"急诊","visit_time":"2026-06-09T23:34:41.987523","patient_id":1,"counters":{"
+    [200] {"total":2,"total_alerts":6,"total_unread":6,"total_unresolved":6,"items":[{"visit_id":2,"visit_no":"V-CMP-002","visit_type":"急诊","visit_time":"2026-06-10T01:01:32.810023","patient_id":1,"counters":{"
   [PASS]: 3a 提醒汇总校验：total_alerts=Σcounters.total, total_unresolved=Σcounters.unresolved_count  (total_alerts=6(Σ=6), unresolved=6(Σ=6))
 
 >>> GET http://localhost:8000/api/v1/alerts/by-visit/summary?patient_id=1&alert_types=drug_contraindication,critical_value
-    [200] {"total":2,"total_alerts":5,"total_unread":5,"total_unresolved":5,"items":[{"visit_id":2,"visit_no":"V-CMP-002","visit_type":"急诊","visit_time":"2026-06-09T23:34:41.987523","patient_id":1,"counters":{"
+    [200] {"total":2,"total_alerts":5,"total_unread":5,"total_unresolved":5,"items":[{"visit_id":2,"visit_no":"V-CMP-002","visit_type":"急诊","visit_time":"2026-06-10T01:01:32.810023","patient_id":1,"counters":{"
   [PASS]: 3b 组合查询alert_types：只返回指定类型 + 总数=Σ分组total  (filtered_total=5, Σ=5, types_ok=True)
 
 >>> GET http://localhost:8000/api/v1/alerts/by-visit/summary?patient_id=1&visit_no=V-CMP-002
-    [200] {"total":1,"total_alerts":4,"total_unread":4,"total_unresolved":4,"items":[{"visit_id":2,"visit_no":"V-CMP-002","visit_type":"急诊","visit_time":"2026-06-09T23:34:41.987523","patient_id":1,"counters":{"
+    [200] {"total":1,"total_alerts":4,"total_unread":4,"total_unresolved":4,"items":[{"visit_id":2,"visit_no":"V-CMP-002","visit_type":"急诊","visit_time":"2026-06-10T01:01:32.810023","patient_id":1,"counters":{"
   [PASS]: 3c 按visit_no过滤后分组里的visit_no严格一致  (visit_nos_in_groups={'V-CMP-002'})
 
 >>> POST http://localhost:8000/api/v1/alerts/batch-resolve
     [200] {"total_resolved":6,"resolved_ids":[1,2,3,4,5,6]}
 
 >>> GET http://localhost:8000/api/v1/alerts/by-visit/summary?patient_id=1
-    [200] {"total":2,"total_alerts":6,"total_unread":0,"total_unresolved":0,"items":[{"visit_id":2,"visit_no":"V-CMP-002","visit_type":"急诊","visit_time":"2026-06-09T23:34:41.987523","patient_id":1,"counters":{"
+    [200] {"total":2,"total_alerts":6,"total_unread":0,"total_unresolved":0,"items":[{"visit_id":2,"visit_no":"V-CMP-002","visit_type":"急诊","visit_time":"2026-06-10T01:01:32.810023","patient_id":1,"counters":{"
   [PASS]: 3d 批量处理后total_unresolved=0 (同步减少), resolve_rate 100%  (before_unresolved=6, after=0, resolved=6)
 
 >>> GET http://localhost:8000/api/v1/patients/1/timeline?event_types=alert&visit_id=2&page_size=50
-    [200] {"patient_id":1,"total":4,"page":1,"page_size":50,"has_more":false,"events":[{"event_type":"alert","event_time":"2026-06-09T15:35:00.088355","title":"提醒: [critical] 禁忌用药: 硝酸酯类_西地那非","description":"新药【
+    [200] {"patient_id":1,"total":4,"page":1,"page_size":50,"has_more":false,"events":[{"event_type":"alert","event_time":"2026-06-09T17:01:50.918550","title":"提醒: [critical] 禁忌用药: 硝酸酯类_西地那非","description":"新药【
   [PASS]: 3e 处理后时间线alert事件状态全部为'已解决'（闭环同步）  (alerts_in_timeline=4, statuses=['已解决', '已解决', '已解决', '已解决'])
 
 ================================================================================
@@ -122,24 +122,24 @@ Started: 2026-06-09T23:34:23.793301
 ================================================================================
 
 >>> POST http://localhost:8000/api/v1/care-plans/2/follow-up-convert
-    [200] {"patient_id":1,"visit_id":2,"follow_up_type":"clinic","scheduled_date":"2026-06-16T15:35:06.123431","purpose":"[方案#2] 冠脉综合征出院后一周复查","assigned_doctor_id":"dr_chen","id":1,"status":"scheduled","actual_
+    [200] {"patient_id":1,"visit_id":2,"follow_up_type":"clinic","scheduled_date":"2026-06-16T17:01:56.957076","purpose":"[方案#2] 冠脉综合征出院后一周复查","assigned_doctor_id":"dr_chen","id":1,"care_plan_id":2,"care_plan_s
   [PASS]: 4a 方案转随访成功：关联patient/visit/purpose含方案号  (fu_id=1, pid=1, vid=2, purpose=[方案#2] 冠脉综合征出院后一周复查)
 
 >>> PATCH http://localhost:8000/api/v1/follow-ups/1/record
-    [200] {"patient_id":1,"visit_id":2,"follow_up_type":"clinic","scheduled_date":"2026-06-16T15:35:06.123431","purpose":"[方案#2] 冠脉综合征出院后一周复查","assigned_doctor_id":"dr_chen","id":1,"status":"completed","actual_
+    [200] {"patient_id":1,"visit_id":2,"follow_up_type":"clinic","scheduled_date":"2026-06-16T17:01:56.957076","purpose":"[方案#2] 冠脉综合征出院后一周复查","assigned_doctor_id":"dr_chen","id":1,"care_plan_id":2,"care_plan_s
 
 >>> POST http://localhost:8000/api/v1/follow-ups
-    [200] {"patient_id":1,"visit_id":1,"follow_up_type":"phone","scheduled_date":"2026-06-04T23:35:26.271778","purpose":"高血压电话随访","assigned_doctor_id":null,"id":2,"status":"scheduled","actual_date":null,"sympto
+    [200] {"patient_id":1,"visit_id":1,"follow_up_type":"phone","scheduled_date":"2026-06-05T01:02:17.105879","purpose":"高血压电话随访","assigned_doctor_id":null,"id":2,"care_plan_id":null,"care_plan_snapshot":null,"
 
 >>> PATCH http://localhost:8000/api/v1/follow-ups/2/record
-    [200] {"patient_id":1,"visit_id":1,"follow_up_type":"phone","scheduled_date":"2026-06-04T23:35:26.271778","purpose":"高血压电话随访","assigned_doctor_id":null,"id":2,"status":"missed","actual_date":null,"symptoms_
+    [200] {"patient_id":1,"visit_id":1,"follow_up_type":"phone","scheduled_date":"2026-06-05T01:02:17.105879","purpose":"高血压电话随访","assigned_doctor_id":null,"id":2,"care_plan_id":null,"care_plan_snapshot":null,"
 
 >>> GET http://localhost:8000/api/v1/patients/1/timeline?event_types=follow_up&page_size=20
-    [200] {"patient_id":1,"total":2,"page":1,"page_size":20,"has_more":false,"events":[{"event_type":"follow_up","event_time":"2026-06-16T15:35:06.123431","title":"随访: clinic [已完成]","description":"[方案#2] 冠脉综合征出
+    [200] {"patient_id":1,"total":2,"page":1,"page_size":20,"has_more":false,"events":[{"event_type":"follow_up","event_time":"2026-06-16T17:01:56.957076","title":"随访: clinic [已完成]","description":"[方案#2] 冠脉综合征出
   [PASS]: 4b 随访完成回写时间线：1个'已完成' + 1个'逾期未到'状态都正确  (completed=1, missed=1, all_fu_statuses=['已完成', '逾期未到'])
 
 >>> GET http://localhost:8000/api/v1/care-plans/audit/statistics?period_days=60
-    [200] {"period_days":60,"alerts":{"total":6,"read":6,"read_rate_pct":100.0,"resolved":6,"unresolved":0,"resolve_rate_pct":100.0,"by_type":{"abnormal_value":1,"critical_value":4,"drug_contraindication":1},"b
+    [200] {"period_days":60,"filters":{"period_days":60,"department_id":null,"doctor_id":null,"patient_id":null,"since":"2026-04-11T01:02:25.146526","until":"2026-06-10T01:02:25.146526","doctor_count":null},"al
   [PASS]: 4c 审计统计：提醒resolve_rate=100%, 随访完成率计算正确, 方案数>=2  (resolve_rate=100.0%, alerts_total=6, fu_total=2, plans_total=2, fu_complete_rate=50.0%)
 
 ================================================================================

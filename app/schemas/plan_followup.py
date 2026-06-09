@@ -46,6 +46,11 @@ class CarePlanGenerateRequest(BaseModel):
     plan_type: str = Field("comprehensive", max_length=50)
     include_risk_assessment: Optional[bool] = True
     include_medication_check: Optional[bool] = True
+    include_visit_id: Optional[int] = None
+    include_abnormal_labs: Optional[bool] = True
+    include_active_medications: Optional[bool] = True
+    include_unresolved_alerts: Optional[bool] = True
+    include_vital_signs: Optional[bool] = True
     author_id: Optional[str] = None
 
 
@@ -96,6 +101,9 @@ class FollowUpReminderRequest(BaseModel):
 
 class FollowUpResponse(FollowUpBase):
     id: int
+    care_plan_id: Optional[int] = None
+    care_plan_snapshot: Optional[Dict[str, Any]] = None
+    plan_sync_status: Optional[str] = "synced"
     status: str
     actual_date: Optional[datetime]
     symptoms_recorded: Optional[Dict[str, Any]]
@@ -137,9 +145,12 @@ class CarePlanToFollowUpRequest(BaseModel):
 
 class AuditStatisticsResponse(BaseModel):
     period_days: int = 30
+    filters: Dict[str, Any] = {}
     alerts: Dict[str, Any] = {}
     follow_ups: Dict[str, Any] = {}
     care_plans: Dict[str, Any] = {}
+    closed_loop_rates: Dict[str, Any] = {}
+    daily_trend: List[Dict[str, Any]] = []
 
 
 class ReminderResult(BaseModel):

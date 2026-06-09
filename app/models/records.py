@@ -10,7 +10,7 @@ class VitalSign(Base):
     id = Column(Integer, primary_key=True, index=True)
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False)
     visit_id = Column(Integer, ForeignKey("visits.id"))
-    record_time = Column(DateTime, default=datetime.utcnow)
+    record_time = Column(DateTime, default=datetime.now)
     systolic_bp = Column(Float)
     diastolic_bp = Column(Float)
     heart_rate = Column(Float)
@@ -20,7 +20,7 @@ class VitalSign(Base):
     source = Column(String(50))
     operator_id = Column(String(50))
     remark = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
     patient = relationship("Patient", back_populates="vital_signs")
 
@@ -31,7 +31,7 @@ class ECGRecord(Base):
     id = Column(Integer, primary_key=True, index=True)
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False)
     visit_id = Column(Integer, ForeignKey("visits.id"))
-    record_time = Column(DateTime, default=datetime.utcnow)
+    record_time = Column(DateTime, default=datetime.now)
     ecg_type = Column(String(50))
     heart_rate = Column(Float)
     rhythm = Column(String(100))
@@ -46,7 +46,7 @@ class ECGRecord(Base):
     abnormal_flags = Column(JSON)
     ecg_data_url = Column(String(255))
     report_id = Column(String(50))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
     patient = relationship("Patient", back_populates="ecg_records")
 
@@ -57,7 +57,7 @@ class LabRecord(Base):
     id = Column(Integer, primary_key=True, index=True)
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False)
     visit_id = Column(Integer, ForeignKey("visits.id"))
-    record_time = Column(DateTime, default=datetime.utcnow)
+    record_time = Column(DateTime, default=datetime.now)
     lab_type = Column(String(50))
     test_name = Column(String(100))
     test_code = Column(String(50))
@@ -69,7 +69,7 @@ class LabRecord(Base):
     abnormal_flag = Column(String(10))
     report_id = Column(String(50))
     specimen_type = Column(String(50))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
     patient = relationship("Patient", back_populates="lab_records")
 
@@ -80,7 +80,7 @@ class MedicationRecord(Base):
     id = Column(Integer, primary_key=True, index=True)
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False)
     visit_id = Column(Integer, ForeignKey("visits.id"))
-    order_time = Column(DateTime, default=datetime.utcnow)
+    order_time = Column(DateTime, default=datetime.now)
     drug_code = Column(String(50))
     drug_name = Column(String(200), nullable=False)
     generic_name = Column(String(200))
@@ -94,6 +94,6 @@ class MedicationRecord(Base):
     is_active = Column(Boolean, default=True)
     contraindication_flag = Column(Boolean, default=False)
     remark = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
     patient = relationship("Patient", back_populates="medications")

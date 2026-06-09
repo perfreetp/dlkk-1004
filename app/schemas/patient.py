@@ -141,9 +141,12 @@ class CompareMetric(BaseModel):
     unit: Optional[str] = None
     v1_value: Optional[Any] = None
     v2_value: Optional[Any] = None
-    change_type: str  # increased / decreased / unchanged / new / removed / continued
+    change_type: str  # increased / decreased / unchanged / new / removed / continued / discontinued / dosage_changed / frequency_changed / changed
     delta: Optional[float] = None
     level: Optional[str] = None
+    v1_details: Optional[Dict[str, Any]] = None
+    v2_details: Optional[Dict[str, Any]] = None
+    abnormal_change: Optional[str] = None  # improved / worsened / unchanged / new_abnormal / resolved_normal / unknown
 
 
 class VisitCompareSummary(BaseModel):
@@ -153,6 +156,12 @@ class VisitCompareSummary(BaseModel):
     new: int = 0
     removed: int = 0
     continued: int = 0
+    discontinued: int = 0  # 停用
+    dosage_changed: int = 0  # 剂量变化
+    frequency_changed: int = 0  # 频次变化
+    changed: int = 0  # 其他变化
+    improved: int = 0  # 异常→正常
+    worsened: int = 0  # 正常→异常
     total: int = 0
 
 
@@ -169,3 +178,4 @@ class VisitCompareResponse(BaseModel):
     medications: List[CompareMetric] = []
     risks: List[CompareMetric] = []
     summary: Dict[str, VisitCompareSummary] = {}
+    summary_total: Optional[VisitCompareSummary] = None

@@ -205,28 +205,31 @@ class CarePlanService:
         risk_summaries = {}
         evidence_risks = []
         if req.include_risk_assessment:
+            from app.models.risk_alert import RiskAssessment
             for atype in ["heart_failure", "atrial_fibrillation", "coronary_artery_disease"]:
-                latest = RiskEngineService.get_latest_assessment(db, patient_id, atype)
-                if latest:
-                    if visit_id:
-                        if latest.visit_id == visit_id:
-                            risk_summaries[atype] = latest.risk_level
-                            evidence_risks.append({
-                                "id": latest.id,
-                                "assessment_type": latest.assessment_type,
-                                "risk_level": latest.risk_level,
-                                "risk_score": latest.risk_score,
-                                "assessment_date": latest.assessment_date.isoformat() if latest.assessment_date else None,
-                            })
-                    else:
-                        risk_summaries[atype] = latest.risk_level
-                        evidence_risks.append({
-                            "id": latest.id,
-                            "assessment_type": latest.assessment_type,
-                            "risk_level": latest.risk_level,
-                            "risk_score": latest.risk_score,
-                            "assessment_date": latest.assessment_date.isoformat() if latest.assessment_date else None,
-                        })
+                if visit_id:
+                    # 严格就诊隔离：只取visit_id内该类型的最新一条，不因全局最新更新而消失
+                    rec = (
+                        db.query(RiskAssessment)
+                        .filter(
+                            RiskAssessment.patient_id == patient_id,
+                            RiskAssessment.visit_id == visit_id,
+                            RiskAssessment.assessment_type == atype,
+                        )
+                        .order_by(RiskAssessment.assessment_date.desc(), RiskAssessment.created_at.desc())
+                        .first()
+                    )
+                else:
+                    rec = RiskEngineService.get_latest_assessment(db, patient_id, atype)
+                if rec:
+                    risk_summaries[atype] = rec.risk_level
+                    evidence_risks.append({
+                        "id": rec.id,
+                        "assessment_type": rec.assessment_type,
+                        "risk_level": rec.risk_level,
+                        "risk_score": rec.risk_score,
+                        "assessment_date": rec.assessment_date.isoformat() if rec.assessment_date else None,
+                    })
 
         existing_labs = RecordService.list_lab_records(db, patient_id, limit=500)
         if visit_id:
@@ -265,6 +268,8 @@ class CarePlanService:
                 "route": m.route,
                 "start_date": m.start_date.isoformat() if m.start_date else None,
                 "drug_category": m.drug_category,
+                "is_active": m.is_active,
+                "visit_id": m.visit_id,
             }
             for m in visit_meds
         ]
@@ -290,7 +295,12 @@ class CarePlanService:
             for a in unresolved_alerts
         ]
 
-        latest_vs = RecordService.list_vital_signs(db, patient_id, limit=1)[0] if RecordService.list_vital_signs(db, patient_id, limit=1) else None
+        # 生命体征：就诊严格隔离
+        vs_query_kwargs = {"limit": 1}
+        if visit_id:
+            vs_query_kwargs["visit_id"] = visit_id
+        vs_list = RecordService.list_vital_signs(db, patient_id, **vs_query_kwargs)
+        latest_vs = vs_list[0] if vs_list else None
 
         patient = db.query(Patient).filter(Patient.id == patient_id).first()
         ef = None
@@ -359,6 +369,16 @@ class CarePlanService:
             "abnormal_labs": evidence_abnormal_labs,
             "active_medications": evidence_active_meds,
             "unresolved_alerts": evidence_unresolved_alerts,
+            "vital_signs": [{
+                "id": latest_vs.id,
+                "systolic_bp": latest_vs.systolic_bp,
+                "diastolic_bp": latest_vs.diastolic_bp,
+                "heart_rate": latest_vs.heart_rate,
+                "respiratory_rate": getattr(latest_vs, "respiratory_rate", None),
+                "temperature": getattr(latest_vs, "temperature", None),
+                "spo2": getattr(latest_vs, "spo2", None),
+                "record_time": latest_vs.record_time.isoformat() if latest_vs.record_time else None,
+            }] if latest_vs else [],
             "latest_vital_sign": {
                 "id": latest_vs.id,
                 "systolic_bp": latest_vs.systolic_bp,
@@ -411,15 +431,39 @@ class CarePlanService:
 
     @staticmethod
     def update_care_plan(db: Session, plan_id: int, plan_in: CarePlanUpdate) -> Optional[CarePlan]:
+        from app.models.plan_followup import FollowUp
         plan = db.query(CarePlan).filter(CarePlan.id == plan_id).first()
         if not plan:
             return None
+        old_status = plan.status
+        old_exam_suggestions = plan.exam_suggestions
+        old_plan_date = plan.plan_date
         update_data = plan_in.model_dump(exclude_unset=True)
         if "status" in update_data and update_data["status"] in ["reviewed", "approved"] and not plan.review_time:
             plan.review_time = datetime.utcnow()
         for key, value in update_data.items():
             setattr(plan, key, value)
         plan.updated_at = datetime.utcnow()
+
+        # 方案有重要变更时，同步标记关联随访需要医生处理
+        new_status = plan.status
+        status_changed = (old_status != new_status)
+        exam_changed = ("exam_suggestions" in update_data and old_exam_suggestions != plan.exam_suggestions)
+        date_changed = ("plan_date" in update_data and old_plan_date != plan.plan_date)
+        if status_changed or exam_changed or date_changed:
+            # 状态撤回/取消 → plan_withdrawn
+            # 其他重要变更 → plan_updated
+            new_sync = "plan_withdrawn" if new_status in ["cancelled", "withdrawn", "revoked"] else "plan_updated"
+            # 只更新未完成的随访
+            (
+                db.query(FollowUp)
+                .filter(FollowUp.care_plan_id == plan_id, FollowUp.status == "scheduled")
+                .update(
+                    {FollowUp.plan_sync_status: new_sync, FollowUp.updated_at: datetime.utcnow()},
+                    synchronize_session=False,
+                )
+            )
+
         db.commit()
         db.refresh(plan)
         return plan
@@ -497,24 +541,76 @@ class CarePlanService:
         )
         fu = FollowUp(**fu_in.model_dump())
         fu.status = "scheduled"
+        fu.care_plan_id = plan.id
+        fu.plan_sync_status = "synced"
+        fu.care_plan_snapshot = {
+            "plan_id": plan.id,
+            "plan_type": plan.plan_type,
+            "status": plan.status,
+            "author_id": plan.author_id,
+            "plan_date": plan.plan_date.isoformat() if plan.plan_date else None,
+            "exam_suggestion_text": purpose,
+            "original_scheduled_date": scheduled.isoformat() if scheduled else None,
+        }
         db.add(fu)
         db.commit()
         db.refresh(fu)
         return fu
 
     @staticmethod
-    def get_audit_statistics(db: Session, period_days: int = 30) -> Dict[str, Any]:
+    def get_audit_statistics(
+        db: Session,
+        period_days: int = 30,
+        department_id: Optional[str] = None,
+        doctor_id: Optional[str] = None,
+        patient_id: Optional[int] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
         from app.models.risk_alert import Alert
         from app.models.plan_followup import FollowUp
+        from app.models.audit import AuditLog
         from datetime import datetime, timedelta, timezone
 
-        since = datetime.utcnow() - timedelta(days=period_days)
+        # 确定时间范围
+        now = datetime.now()
+        if start_date:
+            since = start_date
+        else:
+            since = now - timedelta(days=period_days)
+        until = end_date or now
 
-        alerts_q = db.query(Alert).filter(Alert.created_at >= since)
+        # 关联科室过滤：如果有department_id，但CarePlan/FollowUp没有department列，
+        # 从AuditLog中反查该department在since~until出现过的doctor_id集合
+        doctor_filter = set()
+        if department_id:
+            log_doctors = (
+                db.query(AuditLog)
+                .filter(AuditLog.department == department_id)
+                .filter(AuditLog.created_at >= since, AuditLog.created_at <= until)
+                .with_entities(AuditLog.doctor_id)
+                .distinct()
+                .all()
+            )
+            doctor_filter = {d[0] for d in log_doctors if d[0]}
+        # 如果doctor_id也传了，交集
+        if doctor_id:
+            if doctor_filter:
+                doctor_filter = doctor_filter & {doctor_id}
+            else:
+                doctor_filter = {doctor_id}
+        effective_doctor_ids = list(doctor_filter) if doctor_filter else None
+
+        # ---------- Alerts ----------
+        alerts_q = db.query(Alert).filter(Alert.created_at >= since).filter(Alert.created_at <= until)
+        if patient_id:
+            alerts_q = alerts_q.filter(Alert.patient_id == patient_id)
+        # 科室/医生：提醒没有doctor_id字段，退化为patient_id+created_at过滤
         all_alerts = alerts_q.all()
         alerts_total = len(all_alerts)
         alerts_read = sum(1 for a in all_alerts if a.is_read)
         alerts_resolved = sum(1 for a in all_alerts if a.is_resolved)
+        alerts_processed = sum(1 for a in all_alerts if a.is_read or a.is_resolved)  # 已处理提醒
         alerts_unresolved = alerts_total - alerts_resolved
         alerts_by_type = {}
         for a in all_alerts:
@@ -523,16 +619,27 @@ class CarePlanService:
         for a in all_alerts:
             alerts_by_level[a.alert_level] = alerts_by_level.get(a.alert_level, 0) + 1
 
-        fus_q = db.query(FollowUp).filter(FollowUp.created_at >= since)
+        # ---------- Follow Ups ----------
+        fus_q = db.query(FollowUp).filter(FollowUp.created_at >= since).filter(FollowUp.created_at <= until)
+        if patient_id:
+            fus_q = fus_q.filter(FollowUp.patient_id == patient_id)
+        if effective_doctor_ids is not None:
+            fus_q = fus_q.filter(FollowUp.assigned_doctor_id.in_(effective_doctor_ids))
         all_fus = fus_q.all()
         fu_total = len(all_fus)
         fu_scheduled = sum(1 for f in all_fus if f.status == "scheduled")
         fu_completed = sum(1 for f in all_fus if f.status == "completed")
         fu_missed = sum(1 for f in all_fus if f.status == "missed")
         fu_cancelled = sum(1 for f in all_fus if f.status == "cancelled")
-        fu_overdue = sum(1 for f in all_fus if f.status == "scheduled" and f.scheduled_date and f.scheduled_date < datetime.utcnow())
+        fu_overdue = sum(1 for f in all_fus if f.status == "scheduled" and f.scheduled_date and f.scheduled_date < now)
+        fu_from_plan = sum(1 for f in all_fus if getattr(f, "care_plan_id", None))  # 方案转随访
 
-        plans_q = db.query(CarePlan).filter(CarePlan.created_at >= since)
+        # ---------- Care Plans ----------
+        plans_q = db.query(CarePlan).filter(CarePlan.created_at >= since).filter(CarePlan.created_at <= until)
+        if patient_id:
+            plans_q = plans_q.filter(CarePlan.patient_id == patient_id)
+        if effective_doctor_ids is not None:
+            plans_q = plans_q.filter(CarePlan.author_id.in_(effective_doctor_ids))
         all_plans = plans_q.all()
         plan_total = len(all_plans)
         plans_by_status = {}
@@ -544,15 +651,77 @@ class CarePlanService:
         def _pct(num, den):
             return round(num * 100.0 / den, 2) if den > 0 else 0.0
 
+        # ---------- 闭环率 ----------
+        alert_process_rate_pct = _pct(alerts_processed, alerts_total)
+        plan_to_fu_rate_pct = _pct(fu_from_plan, plan_total)
+        fu_complete_rate_pct = _pct(fu_completed, fu_total)
+
+        # ---------- 按天趋势 ----------
+        from collections import OrderedDict, defaultdict
+        daily_map: "OrderedDict[str, Dict[str, int]]" = OrderedDict()
+        # 生成日期范围
+        day_cursor = since.date()
+        until_date = until.date()
+        while day_cursor <= until_date:
+            daily_map[day_cursor.isoformat()] = {
+                "date": day_cursor.isoformat(),
+                "alerts_total": 0,
+                "alerts_processed": 0,
+                "plans_total": 0,
+                "plans_to_fu": 0,
+                "fu_total": 0,
+                "fu_completed": 0,
+            }
+            day_cursor += timedelta(days=1)
+
+        def _day_key(dt: Optional[datetime]) -> Optional[str]:
+            if dt:
+                return dt.date().isoformat()
+            return None
+
+        for a in all_alerts:
+            k = _day_key(a.created_at)
+            if k and k in daily_map:
+                daily_map[k]["alerts_total"] += 1
+                if a.is_read or a.is_resolved:
+                    daily_map[k]["alerts_processed"] += 1
+        for p in all_plans:
+            k = _day_key(p.created_at)
+            if k and k in daily_map:
+                daily_map[k]["plans_total"] += 1
+        for f in all_fus:
+            k = _day_key(f.created_at)
+            if k and k in daily_map:
+                daily_map[k]["fu_total"] += 1
+                if f.status == "completed":
+                    daily_map[k]["fu_completed"] += 1
+                if getattr(f, "care_plan_id", None):
+                    # 归属到随访创建的那天算方案转随访
+                    daily_map[k]["plans_to_fu"] += 1
+        daily_trend = list(daily_map.values())
+
+        filters = {
+            "period_days": period_days,
+            "department_id": department_id,
+            "doctor_id": doctor_id,
+            "patient_id": patient_id,
+            "since": since.isoformat(),
+            "until": until.isoformat(),
+            "doctor_count": len(effective_doctor_ids) if effective_doctor_ids is not None else None,
+        }
+
         return {
             "period_days": period_days,
+            "filters": filters,
             "alerts": {
                 "total": alerts_total,
                 "read": alerts_read,
+                "processed": alerts_processed,
                 "read_rate_pct": _pct(alerts_read, alerts_total),
                 "resolved": alerts_resolved,
                 "unresolved": alerts_unresolved,
                 "resolve_rate_pct": _pct(alerts_resolved, alerts_total),
+                "process_rate_pct": alert_process_rate_pct,
                 "by_type": alerts_by_type,
                 "by_level": alerts_by_level,
             },
@@ -563,12 +732,20 @@ class CarePlanService:
                 "missed": fu_missed,
                 "cancelled": fu_cancelled,
                 "overdue": fu_overdue,
-                "complete_rate_pct": _pct(fu_completed, fu_total),
+                "from_plan": fu_from_plan,
+                "complete_rate_pct": fu_complete_rate_pct,
             },
             "care_plans": {
                 "total": plan_total,
                 "draft": plan_draft,
                 "issued": plan_issued,
                 "by_status": plans_by_status,
+                "plan_to_fu_rate_pct": plan_to_fu_rate_pct,
             },
+            "closed_loop_rates": {
+                "alert_process_rate_pct": alert_process_rate_pct,
+                "plan_to_follow_up_rate_pct": plan_to_fu_rate_pct,
+                "follow_up_complete_rate_pct": fu_complete_rate_pct,
+            },
+            "daily_trend": daily_trend,
         }

@@ -22,7 +22,7 @@ class AuditLog(Base):
     user_agent = Column(String(255))
     latency_ms = Column(Integer)
     error_message = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=datetime.now, index=True)
 
 
 class UsageStats(Base):
@@ -38,4 +38,4 @@ class UsageStats(Base):
     doctor_count = Column(Integer, default=0)
     avg_latency_ms = Column(Integer)
     error_count = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)

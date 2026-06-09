@@ -35,9 +35,12 @@ class RecordService:
         patient_id: int,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
+        visit_id: Optional[int] = None,
         limit: int = 100,
     ) -> List[VitalSign]:
         query = db.query(VitalSign).filter(VitalSign.patient_id == patient_id)
+        if visit_id:
+            query = query.filter(VitalSign.visit_id == visit_id)
         if start_time:
             query = query.filter(VitalSign.record_time >= start_time)
         if end_time:

@@ -21,7 +21,40 @@ def init_db():
     from app.models.risk_alert import RiskAssessment, Alert
     from app.models.plan_followup import CarePlan, FollowUp
     from app.models.audit import AuditLog, UsageStats
+    from sqlalchemy import text
     Base.metadata.create_all(bind=engine)
+    # SQLite: 老表没有新增列时，ALTER TABLE ADD兼容
+    with engine.connect() as conn:
+        def _cols(table):
+            try:
+                return {r[1] for r in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()}
+            except Exception:
+                return set()
+        fu_cols = _cols("follow_ups")
+        for col_name, col_def in [
+            ("care_plan_id", "INTEGER"),
+            ("care_plan_snapshot", "TEXT"),
+            ("plan_sync_status", "VARCHAR(20) DEFAULT 'synced'"),
+        ]:
+            if fu_cols and col_name not in fu_cols:
+                try:
+                    conn.execute(text(f"ALTER TABLE follow_ups ADD COLUMN {col_name} {col_def}"))
+                    conn.commit()
+                except Exception:
+                    pass
+        vs_cols = _cols("vital_signs")
+        for col_name, col_def in [
+            ("visit_id", "INTEGER"),
+            ("respiratory_rate", "REAL"),
+            ("temperature", "REAL"),
+            ("oxygen_saturation", "REAL"),
+        ]:
+            if vs_cols and col_name not in vs_cols:
+                try:
+                    conn.execute(text(f"ALTER TABLE vital_signs ADD COLUMN {col_name} {col_def}"))
+                    conn.commit()
+                except Exception:
+                    pass
 
 
 @asynccontextmanager

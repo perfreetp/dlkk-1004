@@ -11,7 +11,7 @@ class RiskAssessment(Base):
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False)
     visit_id = Column(Integer, ForeignKey("visits.id"))
     assessment_type = Column(String(50), nullable=False)
-    assessment_date = Column(DateTime, default=datetime.utcnow)
+    assessment_date = Column(DateTime, default=datetime.now)
     risk_level = Column(String(20), nullable=False)
     risk_score = Column(Float)
     score_details = Column(JSON)
@@ -19,7 +19,7 @@ class RiskAssessment(Base):
     recommendations = Column(Text)
     algorithm_version = Column(String(20))
     assessor = Column(String(50))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
     patient = relationship("Patient", back_populates="risk_assessments")
 
@@ -32,7 +32,7 @@ class Alert(Base):
     visit_id = Column(Integer, ForeignKey("visits.id"))
     alert_type = Column(String(50), nullable=False)
     alert_level = Column(String(20), nullable=False)
-    alert_time = Column(DateTime, default=datetime.utcnow)
+    alert_time = Column(DateTime, default=datetime.now)
     title = Column(String(200), nullable=False)
     content = Column(Text)
     related_record_type = Column(String(50))
@@ -43,6 +43,6 @@ class Alert(Base):
     is_resolved = Column(Boolean, default=False)
     resolve_time = Column(DateTime)
     resolve_note = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
     patient = relationship("Patient", back_populates="alerts")

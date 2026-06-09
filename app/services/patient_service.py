@@ -422,17 +422,30 @@ class PatientService:
                 continue
             vid, vno = _visit_info(fu.visit_id)
             status_map2 = {"scheduled": "已预约", "completed": "已完成", "cancelled": "已取消", "missed": "逾期未到"}
+            sync_tag = ""
+            fu_sync = getattr(fu, "plan_sync_status", None) or "synced"
+            if fu_sync != "synced" and getattr(fu, "care_plan_id", None):
+                sync_map = {"plan_updated": "方案已更新，请核对", "plan_withdrawn": "方案已撤回，请确认"}
+                sync_tag = f" ⚠ {sync_map.get(fu_sync, '方案有变更')}"
+            fu_status = status_map2.get(fu.status, fu.status)
             evt = TimelineEvent(
                 event_type="follow_up",
                 event_time=fu.scheduled_date,
-                title=f"随访: {fu.follow_up_type} [{status_map2.get(fu.status, fu.status)}]",
+                title=f"随访: {fu.follow_up_type} [{fu_status}]{sync_tag}",
                 description=fu.purpose or f"预约: {fu.scheduled_date.strftime('%Y-%m-%d')}",
                 related_id=fu.id,
                 visit_id=vid,
                 visit_no=vno,
-                status=status_map2.get(fu.status, fu.status),
-                level="high" if fu.status == "missed" else None,
-                extra={"assigned_doctor": fu.assigned_doctor_id, "actual_date": fu.actual_date.isoformat() if fu.actual_date else None, "reminder_sent": fu.reminder_sent},
+                status=fu_status,
+                level="high" if fu.status == "missed" or (fu_sync != "synced") else None,
+                extra={
+                    "assigned_doctor": fu.assigned_doctor_id,
+                    "actual_date": fu.actual_date.isoformat() if fu.actual_date else None,
+                    "reminder_sent": fu.reminder_sent,
+                    "care_plan_id": getattr(fu, "care_plan_id", None),
+                    "care_plan_snapshot": getattr(fu, "care_plan_snapshot", None),
+                    "plan_sync_status": fu_sync,
+                },
             )
             _append(evt, fu.visit_id)
 
@@ -512,6 +525,46 @@ class PatientService:
                 return "unchanged", 0.0
             return ("increased" if diff > 0 else "decreased"), round(diff, 4)
 
+        def _abnormal_change(abn_v1, abn_v2, val_v1=None, val_v2=None, ref_low=None, ref_high=None):
+            def _is_abn(v, a):
+                if a is not None:
+                    return bool(a)
+                if v is None or ref_low is None or ref_high is None:
+                    return False
+                try:
+                    fv = float(v)
+                    return fv < float(ref_low) or fv > float(ref_high)
+                except (ValueError, TypeError):
+                    return False
+            a1 = _is_abn(val_v1, abn_v1)
+            a2 = _is_abn(val_v2, abn_v2)
+            if not a1 and not a2:
+                # 双正常：若都有值→unchanged_normal，一个有一个无→unknown
+                if val_v1 is None and val_v2 is None:
+                    return "unknown"
+                if val_v1 is None or val_v2 is None:
+                    return "unchanged"
+                return "unchanged_normal"
+            if not a1 and a2:
+                return "worsened"  # 正常→异常=变差
+            if a1 and not a2:
+                return "improved"  # 异常→正常=改善
+            # 双异常：看趋势
+            if val_v1 is None or val_v2 is None or ref_low is None or ref_high is None:
+                return "unchanged_abnormal"
+            try:
+                f1, f2, lo, hi = float(val_v1), float(val_v2), float(ref_low), float(ref_high)
+                def _deviation(x):
+                    if x < lo: return lo - x
+                    if x > hi: return x - hi
+                    return 0.0
+                d1, d2 = _deviation(f1), _deviation(f2)
+                if abs(d2 - d1) < 1e-9:
+                    return "unchanged_abnormal"
+                return "improved" if d2 < d1 else "worsened"
+            except (ValueError, TypeError):
+                return "unchanged_abnormal"
+
         summary = {}
         for cat in ["vital_signs", "labs", "medications", "risks"]:
             summary[cat] = VisitCompareSummary()
@@ -524,6 +577,14 @@ class PatientService:
             VitalSign.patient_id == patient_id, VitalSign.visit_id == visit_id2
         ).order_by(VitalSign.record_time.desc()).first()
 
+        VITAL_REF = {
+            "systolic_bp": (90.0, 140.0),
+            "diastolic_bp": (60.0, 90.0),
+            "heart_rate": (60.0, 100.0),
+            "respiratory_rate": (12.0, 20.0),
+            "temperature": (36.0, 37.3),
+            "oxygen_saturation": (95.0, 100.0),
+        }
         vital_map = {
             "收缩压": ("systolic_bp", "mmHg"),
             "舒张压": ("diastolic_bp", "mmHg"),
@@ -537,11 +598,32 @@ class PatientService:
             a = getattr(vs1, field, None) if vs1 else None
             b = getattr(vs2, field, None) if vs2 else None
             ctype, delta = _num_change(a, b)
-            vital_results.append(CompareMetric(
+            ref = VITAL_REF.get(field)
+            abn_v1 = None
+            abn_v2 = None
+            if ref and a is not None:
+                try: fa = float(a); abn_v1 = fa < ref[0] or fa > ref[1]
+                except (ValueError, TypeError): abn_v1 = None
+            if ref and b is not None:
+                try: fb = float(b); abn_v2 = fb < ref[0] or fb > ref[1]
+                except (ValueError, TypeError): abn_v2 = None
+            abn_change = _abnormal_change(abn_v1, abn_v2, val_v1=a, val_v2=b, ref_low=ref[0] if ref else None, ref_high=ref[1] if ref else None)
+            v1d = {"value": a, "unit": unit, "is_abnormal": abn_v1}
+            v2d = {"value": b, "unit": unit, "is_abnormal": abn_v2}
+            if ref:
+                v1d["reference_low"] = ref[0]; v1d["reference_high"] = ref[1]
+                v2d["reference_low"] = ref[0]; v2d["reference_high"] = ref[1]
+            cm = CompareMetric(
                 name=name, code=field, unit=unit,
                 v1_value=a, v2_value=b, change_type=ctype, delta=delta,
-            ))
+                v1_details=v1d, v2_details=v2d, abnormal_change=abn_change,
+                level="abnormal_v1" if abn_v1 else None,
+            )
+            if abn_v2: cm.level = "abnormal_v2" if not cm.level else "abnormal_both"
+            vital_results.append(cm)
             setattr(summary["vital_signs"], ctype, getattr(summary["vital_signs"], ctype) + 1)
+            if abn_change == "improved": summary["vital_signs"].improved += 1
+            elif abn_change == "worsened": summary["vital_signs"].worsened += 1
             summary["vital_signs"].total += 1
 
         # === 2. Labs: 按 test_code 归并比较 ===
@@ -564,19 +646,31 @@ class PatientService:
             va = a.test_value if a else None
             vb = b.test_value if b else None
             ctype, delta = _num_change(va, vb)
+            abn_v1 = getattr(a, "is_abnormal", None) if a else None
+            abn_v2 = getattr(b, "is_abnormal", None) if b else None
+            ref_low = (a.reference_low if a else None) or (b.reference_low if b else None)
+            ref_high = (a.reference_high if a else None) or (b.reference_high if b else None)
+            abn_change = _abnormal_change(abn_v1, abn_v2, val_v1=va, val_v2=vb, ref_low=ref_low, ref_high=ref_high)
+            abn_flag_v1 = getattr(a, "abnormal_flag", None) if a else None
+            abn_flag_v2 = getattr(b, "abnormal_flag", None) if b else None
+            v1d = {"value": va, "unit": unit, "is_abnormal": abn_v1, "abnormal_flag": abn_flag_v1,
+                   "reference_low": a.reference_low if a else None, "reference_high": a.reference_high if a else None}
+            v2d = {"value": vb, "unit": unit, "is_abnormal": abn_v2, "abnormal_flag": abn_flag_v2,
+                   "reference_low": b.reference_low if b else None, "reference_high": b.reference_high if b else None}
             level = None
-            if a and getattr(a, "is_abnormal", None):
-                level = "abnormal_v1"
-            if b and getattr(b, "is_abnormal", None):
-                level = "abnormal_v2" if not level else "abnormal_both"
+            if abn_v1: level = "abnormal_v1"
+            if abn_v2: level = "abnormal_v2" if not level else "abnormal_both"
             lab_results.append(CompareMetric(
                 name=name, code=code, unit=unit,
                 v1_value=va, v2_value=vb, change_type=ctype, delta=delta, level=level,
+                v1_details=v1d, v2_details=v2d, abnormal_change=abn_change,
             ))
             setattr(summary["labs"], ctype, getattr(summary["labs"], ctype) + 1)
+            if abn_change == "improved": summary["labs"].improved += 1
+            elif abn_change == "worsened": summary["labs"].worsened += 1
             summary["labs"].total += 1
 
-        # === 3. Medications: 按 generic_name 归并 ===
+        # === 3. Medications: 按 generic_name 归并，细分为停用/剂量/频次变化 ===
         meds1 = db.query(MedicationRecord).filter(
             MedicationRecord.patient_id == patient_id, MedicationRecord.visit_id == visit_id1
         ).all()
@@ -592,17 +686,47 @@ class PatientService:
             b = mmap2.get(key)
             name = (a.drug_name if a else None) or (b.drug_name if b else None) or key
             gname = (a.generic_name if a else None) or (b.generic_name if b else None)
+            # 激活状态判断
+            active_v1 = bool(getattr(a, "is_active", False)) if a else False
+            active_v2 = bool(getattr(b, "is_active", False)) if b else False
+            dose_v1 = getattr(a, "dosage", None) if a else None
+            dose_v2 = getattr(b, "dosage", None) if b else None
+            freq_v1 = getattr(a, "frequency", None) if a else None
+            freq_v2 = getattr(b, "frequency", None) if b else None
+            route_v1 = getattr(a, "route", None) if a else None
+            route_v2 = getattr(b, "route", None) if b else None
+
             if a and b:
-                ctype = "continued"
+                # 双都存在
+                if active_v1 and not active_v2:
+                    ctype = "discontinued"  # 明确停用：从active→inactive且V2有记录
+                else:
+                    dose_changed = (dose_v1 != dose_v2) and (dose_v1 is not None or dose_v2 is not None)
+                    freq_changed = (freq_v1 != freq_v2) and (freq_v1 is not None or freq_v2 is not None)
+                    if dose_changed and freq_changed:
+                        ctype = "changed"  # 剂量+频次都变了
+                    elif dose_changed:
+                        ctype = "dosage_changed"
+                    elif freq_changed:
+                        ctype = "frequency_changed"
+                    else:
+                        ctype = "continued"
             elif b and not a:
                 ctype = "new"
             else:
-                ctype = "removed"
-            va = a.dosage if a else None
-            vb = b.dosage if b else None
+                # V1有V2完全没有记录（b is None）
+                ctype = "removed"  # V2没这个药记录（不管V1是否active，按老逻辑removed）
+
+            va = dose_v1
+            vb = dose_v2
+            v1d = {"dosage": dose_v1, "frequency": freq_v1, "route": route_v1, "is_active": active_v1}
+            v2d = {"dosage": dose_v2, "frequency": freq_v2, "route": route_v2, "is_active": active_v2}
+            if a: v1d["start_date"] = a.start_date.isoformat() if a.start_date else None
+            if b: v2d["start_date"] = b.start_date.isoformat() if b.start_date else None
             med_results.append(CompareMetric(
                 name=name, code=gname,
                 v1_value=va, v2_value=vb, change_type=ctype,
+                v1_details=v1d, v2_details=v2d,
             ))
             setattr(summary["medications"], ctype, getattr(summary["medications"], ctype) + 1)
             summary["medications"].total += 1
@@ -645,6 +769,18 @@ class PatientService:
             setattr(summary["risks"], ctype, getattr(summary["risks"], ctype) + 1)
             summary["risks"].total += 1
 
+        # 总体汇总：把四个类别的计数器都累加
+        total_summary = VisitCompareSummary()
+        fields = [
+            "increased", "decreased", "unchanged", "new", "removed", "continued",
+            "discontinued", "dosage_changed", "frequency_changed", "changed",
+            "improved", "worsened", "total",
+        ]
+        for cat in ["vital_signs", "labs", "medications", "risks"]:
+            cs = summary[cat]
+            for f in fields:
+                setattr(total_summary, f, getattr(total_summary, f) + getattr(cs, f))
+
         return {
             "patient_id": patient_id,
             "visit1_id": visit_id1,
@@ -658,4 +794,5 @@ class PatientService:
             "medications": [m.model_dump() for m in med_results],
             "risks": [m.model_dump() for m in risk_results],
             "summary": {k: v.model_dump() for k, v in summary.items()},
+            "summary_total": total_summary.model_dump(),
         }

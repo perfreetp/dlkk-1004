@@ -128,12 +128,18 @@ def query_timeline(
 @router.get("/{patient_id}/visits/compare", response_model=VisitCompareResponse, summary="两次就诊指标对比视图")
 def compare_visits(
     patient_id: int,
-    visit_id1: int = Query(..., description="就诊1 ID"),
-    visit_id2: int = Query(..., description="就诊2 ID"),
+    visit_id1: Optional[int] = Query(None, description="就诊1 ID"),
+    visit_id2: Optional[int] = Query(None, description="就诊2 ID"),
+    visit_id_1: Optional[int] = Query(None, description="就诊1 ID (下划线格式)"),
+    visit_id_2: Optional[int] = Query(None, description="就诊2 ID (下划线格式)"),
     db: Session = Depends(get_db),
 ):
+    v1 = visit_id1 if visit_id1 is not None else visit_id_1
+    v2 = visit_id2 if visit_id2 is not None else visit_id_2
+    if v1 is None or v2 is None:
+        raise HTTPException(status_code=422, detail="visit_id1/visit_id_1 和 visit_id2/visit_id_2 必须提供")
     try:
-        result = PatientService.compare_visits(db, patient_id, visit_id1, visit_id2)
+        result = PatientService.compare_visits(db, patient_id, v1, v2)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result
